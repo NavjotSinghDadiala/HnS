@@ -780,7 +780,14 @@ const ChatbotPropertyCard = ({ property, navigate }) => {
   return (
     <div
       className="chatbot-property-card"
-      onClick={() => navigate(`/property/${property.id}`)}
+      onClick={async () => {
+        try {
+          await api.post('/chatbot/track-interaction', { property_id: property.id, action: 'clicked' });
+        } catch (e) {
+          console.error('Failed to track interaction', e);
+        }
+        navigate(`/property/${property.id}`);
+      }}
       style={{ cursor: "pointer" }}
     >
       <img

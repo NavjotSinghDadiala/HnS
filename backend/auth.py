@@ -45,9 +45,30 @@ def clerk_required(optional=False):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             try:
-                # 1. Verify Clerk Request
-                # In v5, authenticate_request is a standalone function
-                # It expects an object with a 'headers' property (Requestish)
+                # 1. First check if user exists in local database by email from Authorization header
+                # This makes the system database-first rather than Clerk-first
+                auth_header = request.headers.get('Authorization', '')
+                if auth_header.startswith('Bearer '):
+                    try:
+                        # Try to decode as a simple email token for local auth
+                        token = auth_header.replace('Bearer ', '')
+                        # Simple format: email:password (base64 encoded for basic auth style)
+                        import base64
+                        try:
+                            decoded = base64.b64decode(token).decode('utf-8')
+                            if ':' in decoded:
+                                email, password = decoded.split(':', 1)
+                                # Check if user exists in database
+                                user = User.query.filter_by(email=email).first()
+                                if user and user.check_password(password):
+                                    g.current_user = user
+                                    return f(*args, **kwargs)
+                        except:
+                            pass  # Not a local auth token, continue with Clerk
+                    except:
+                        pass  # Continue with Clerk auth
+                
+                # 2. Verify Clerk Request (only if local auth didn't work)
                 request_state = authenticate_request(
                     FlaskRequestWrapper(request),
                     AuthenticateRequestOptions(secret_key=CLERK_SECRET_KEY)
@@ -62,8 +83,7 @@ def clerk_required(optional=False):
                         'reason': str(request_state.reason)
                     }), 401
                 
-                # 2. Extract Data
-                # In v5, request_state.payload might contain the claims directly
+                # 3. Extract Data
                 payload = getattr(request_state, 'payload', None)
                 if not payload and hasattr(request_state, 'token'):
                     payload = jwt.decode(request_state.token, options={"verify_signature": False})
@@ -73,19 +93,18 @@ def clerk_required(optional=False):
 
                 clerk_user_id = payload.get('sub')
 
-                # 3. Database Lookup
+                # 4. Database Lookup - First check by clerk_user_id
                 user = User.query.filter_by(clerk_user_id=clerk_user_id).first()
 
                 if not user:
                     # Fetch profile from Clerk for missing data
                     try:
-                        clerk_user_data = sdk.users.get_user(user_id=clerk_user_id)
+                        clerk_user_data = sdk.users.get(user_id=clerk_user_id)
                     except Exception as e:
                         print(f"Clerk User Fetch Error: {str(e)}")
                         clerk_user_data = None
                     
-                    # --- HANDLING NULL CONSTRAINTS (THE SAFETY NET) ---
-                    # A. Email Fallback
+                    # Get email from Clerk
                     email = None
                     if hasattr(clerk_user_data, 'email_addresses') and clerk_user_data.email_addresses:
                         email = clerk_user_data.email_addresses[0].email_address
@@ -93,9 +112,16 @@ def clerk_required(optional=False):
                     if not email:
                         return jsonify({"error": "Unauthorized", "reason": "User must have a valid email address."}), 401
 
-                    # B. Username Fallback
-                    raw_username = getattr(clerk_user_data, 'username', None)
-                    first_name = getattr(clerk_user_data, 'first_name', None)
+                    # Check if user exists in database by email
+                    existing_user = User.query.filter_by(email=email).first()
+                    if existing_user:
+                        # Attach Clerk ID to existing user
+                        existing_user.clerk_user_id = clerk_user_id
+                        db.session.commit()
+                        user = existing_user
+                    else:
+                        # User not in database - deny access
+                        return jsonify({"error": "Unauthorized", "reason": "User not found in database. Please contact administrator."}), 401
                     email_prefix = email.split('@')[0] if email else None
 
                     final_username = raw_username or first_name or email_prefix or f"hns_user_{clerk_user_id[:8]}"

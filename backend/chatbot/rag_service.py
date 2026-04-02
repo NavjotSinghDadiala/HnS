@@ -6,12 +6,23 @@ from datetime import datetime
 from enum import Enum
 from collections import Counter
 from dotenv import load_dotenv
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_postgres import PGVector
-from langchain_core.documents import Document
-from langchain_core.prompts import PromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_classic.chains import ConversationalRetrievalChain
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+    from langchain_chroma import Chroma
+    from langchain_core.documents import Document
+    from langchain_core.prompts import PromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_classic.chains import ConversationalRetrievalChain
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    print("LangChain dependencies not available. Some features will be disabled.")
+    LANGCHAIN_AVAILABLE = False
+    HuggingFaceEmbeddings = None
+    Chroma = None
+    Document = None
+    PromptTemplate = None
+    ChatGoogleGenerativeAI = None
+    ConversationalRetrievalChain = None
 from models import Property, Blog, BuilderProject, UserPreference, Builder, UserInteraction, ChatSession, db
 from flask import current_app
 import threading
@@ -19,7 +30,7 @@ import threading
 # --- 1. SETUP ---
 load_dotenv()
 
-print("📂 Vector store: PostgreSQL (pgvector)")
+print("📂 Vector store: ChromaDB (SQLite)")
 
 # --- 2. EMBEDDINGS SETUP ---
 HF_MODEL_NAME = os.getenv("HF_EMBED_MODEL", "all-MiniLM-L6-v2")
@@ -63,10 +74,9 @@ class LocalFallbackEmbeddings:
 
 embeddings = None
 
-# --- 3. PGVECTOR STORE SETUP ---
-# Requires the 'vector' extension in your Postgres DB:
-#   CREATE EXTENSION IF NOT EXISTS vector;
-PG_CONNECTION_STRING = os.getenv("DATABASE_URL", "postgresql://localhost/hns_db")
+# --- 3. CHROMA VECTOR STORE SETUP ---
+# Uses SQLite-based ChromaDB for local vector storage
+CHROMA_PERSIST_DIR = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
 COLLECTION_NAME = "real_estate_unified"
 
 _vectorstore = None
@@ -87,23 +97,41 @@ def _create_embeddings():
 
 
 def get_vectorstore():
-    """Lazy PGVector initialization to prevent import-time startup failures."""
+    """Lazy ChromaDB initialization to prevent import-time startup failures."""
     global _vectorstore, embeddings
     if _vectorstore is None:
         with _vectorstore_lock:
             if _vectorstore is None:
-                embeddings = _create_embeddings()
-                _vectorstore = PGVector(
-                    embeddings=embeddings,
-                    collection_name=COLLECTION_NAME,
-                    connection=PG_CONNECTION_STRING,
-                    use_jsonb=True,
-                )
+                if not LANGCHAIN_AVAILABLE or Chroma is None:
+                    print("ChromaDB not available. Using dummy vectorstore.")
+                    _vectorstore = _DummyVectorStore()
+                else:
+                    embeddings = _create_embeddings()
+                    _vectorstore = Chroma(
+                        collection_name=COLLECTION_NAME,
+                        embedding_function=embeddings,
+                        persist_directory=CHROMA_PERSIST_DIR,
+                    )
     return _vectorstore
 
 
+class _DummyVectorStore:
+    """Dummy vectorstore when ChromaDB is not available"""
+    def as_retriever(self, **kwargs):
+        return _DummyRetriever()
+    
+    def add_documents(self, **kwargs):
+        pass
+
+
+class _DummyRetriever:
+    """Dummy retriever when vectorstore is not available"""
+    def get_relevant_documents(self, query):
+        return []
+
+
 class _LazyVectorStore:
-    """Proxy that initializes PGVector only on first use."""
+    """Proxy that initializes ChromaDB only on first use."""
     def __getattr__(self, item):
         return getattr(get_vectorstore(), item)
 
@@ -439,6 +467,7 @@ class ConversationMemory:
              self.entities['bhk_configs'].append(params['bhk'])
              
     def resolve_coreference(self, user_message):
+        msg_lower = user_message.lower()
         
         # Extract budget
         budget_patterns = [
@@ -571,6 +600,13 @@ def enhance_context_with_behavior(user_id, context_blocks):
 # DOCUMENT FACTORY & SYNC (Keep existing)
 # ============================================
 
+class _DummyDocument:
+    """Dummy document when langchain is not available"""
+    def __init__(self, page_content, metadata):
+        self.page_content = page_content
+        self.metadata = metadata
+
+
 def create_unified_document(record):
     """Factory to convert SQL objects into Vector Documents"""
     metadata = {}
@@ -642,7 +678,8 @@ Established: {record.established_year}
 Headquarters: {record.city}, {record.state}
 Description: {record.short_description} {record.detailed_description}"""
 
-    return Document(page_content=content, metadata=metadata), unique_id
+    doc_class = Document if LANGCHAIN_AVAILABLE and Document else _DummyDocument
+    return doc_class(page_content=content, metadata=metadata), unique_id
 
 
 def clean_json_field(field_value):
@@ -656,8 +693,8 @@ def clean_json_field(field_value):
 
 
 def sync_properties_to_vectordb():
-    """Sync database records to the PGVector store (full upsert)."""
-    print("--- Starting Unified Smart Sync (PGVector) ---")
+    """Sync database records to the ChromaDB store (full upsert)."""
+    print("--- Starting Unified Smart Sync (ChromaDB) ---")
     all_records = []
     try:
         all_records.extend(Property.query.all())
@@ -680,11 +717,11 @@ def sync_properties_to_vectordb():
         all_docs.append(doc)
         all_ids.append(unique_id)
 
-    print(f"Found {len(all_docs)} total records. Fetching existing IDs from PGVector...")
+    print(f"Found {len(all_docs)} total records. Fetching existing IDs from ChromaDB...")
 
     # Retrieve IDs that already exist so we skip them
     try:
-        # PGVector stores IDs in the embedding_store table; query via SQLAlchemy raw or
+        # ChromaDB stores IDs in the collection; query via ChromaDB API
         # use the get_by_ids helper if available, otherwise fall back to upsert all.
         existing_ids = set()
         try:
@@ -705,10 +742,10 @@ def sync_properties_to_vectordb():
     new_ids  = [uid for uid in all_ids if uid not in existing_ids]
 
     if not new_docs:
-        print("✅ All data is already up to date in PGVector!")
+        print("✅ All data is already up to date in ChromaDB!")
         return
 
-    print(f"Syncing {len(new_docs)} new items to PGVector...")
+    print(f"Syncing {len(new_docs)} new items to ChromaDB...")
     BATCH_SIZE = 50
     for i in range(0, len(new_docs), BATCH_SIZE):
         batch_docs = new_docs[i:i + BATCH_SIZE]
@@ -718,7 +755,7 @@ def sync_properties_to_vectordb():
             print(f"  Batch {i // BATCH_SIZE + 1} ✅ ({len(batch_docs)} docs)")
         except Exception as e:
             print(f"  Batch {i // BATCH_SIZE + 1} ❌ Error: {e}")
-    print("--- PGVector Sync Complete ---")
+    print("--- ChromaDB Sync Complete ---")
 
 
 # ============================================
@@ -748,6 +785,10 @@ def extract_and_save_preferences(user_message, user_id):
 
 def _extract_preferences_logic(user_message, user_id):
     """Actual logic for extracting preferences"""
+    if not LANGCHAIN_AVAILABLE or ChatGoogleGenerativeAI is None:
+        print("LLM not available for preference extraction")
+        return
+    
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash", 
         temperature=0.0,
@@ -1671,7 +1712,7 @@ def get_direct_sql_results(location=None, bhk=None, max_results=10):
     results = query.limit(max_results).all()
     
     if not results:
-        return null
+        return None
     
     formatted = f"Found {len(results)} properties:\n\n"
     for i, prop in enumerate(results, 1):
@@ -1682,3 +1723,625 @@ def get_direct_sql_results(location=None, bhk=None, max_results=10):
         formatted += f"   📅 Status: {prop.Project_Status}\n\n"
     
     return formatted
+
+
+
+# ============================================
+# 3-LAYER INTELLIGENT ROUTING ARCHITECTURE
+# ============================================
+
+def classify_query(query: str) -> str:
+    """
+    Classify query complexity into simple/medium/complex
+
+    SIMPLE: Direct property search, builder search, filters like price/location/BHK
+    MEDIUM: Requires explanation/recommendations, context from data
+    COMPLEX: Multi-condition + reasoning, decision making
+    """
+    query_lower = query.lower()
+
+    # SIMPLE QUERIES - Direct database lookups
+    simple_keywords = [
+        'show', 'find', 'search', 'list', 'display', 'available',
+        'properties', 'property', 'builder', 'builders', 'developer',
+        'flats', 'apartments', 'houses', 'bhk', 'bedroom',
+        'under', 'below', 'above', 'price', 'budget', 'cost',
+        'location', 'area', 'city', 'near', 'in', 'at',
+        'rera', 'possession', 'status', 'configuration'
+    ]
+
+    # Check if query is mostly simple keywords (lower threshold)
+    words = query_lower.split()
+    simple_word_count = sum(1 for word in words if any(kw in word for kw in simple_keywords))
+
+    # If >50% words are simple keywords, it's simple (reduced from 70%)
+    if len(words) > 0 and simple_word_count / len(words) > 0.5:
+        return "simple"
+
+    # Also check for direct filter patterns
+    filter_patterns = [
+        r'\d+\s*bhk',  # "2BHK"
+        r'under\s+\d+',  # "under 80"
+        r'in\s+[a-zA-Z]+',  # "in Thane"
+        r'by\s+[a-zA-Z]+',  # "by Lodha"
+        r'near\s+[a-zA-Z]+'  # "near metro"
+    ]
+
+    if any(re.search(pattern, query_lower) for pattern in filter_patterns):
+        return "simple"
+
+    # COMPLEX QUERIES - Multi-condition reasoning
+    complex_indicators = [
+        'best', 'recommend', 'suggest', 'compare', 'versus', 'vs',
+        'worth', 'investment', 'roi', 'return', 'profit',
+        'should i', 'is it good', 'which one', 'better than',
+        'analyze', 'evaluate', 'assess', 'decide', 'choose',
+        'future', 'growth', 'appreciation', 'market trend'
+    ]
+
+    complex_count = sum(1 for indicator in complex_indicators if indicator in query_lower)
+
+    # Multi-condition check (price + location + bhk + more)
+    condition_count = 0
+    if any(word in query_lower for word in ['under', 'below', 'above', 'price', 'budget']):
+        condition_count += 1
+    if any(word in query_lower for word in ['bhk', 'bedroom', 'configuration']):
+        condition_count += 1
+    if any(word in query_lower for word in ['location', 'area', 'city', 'near', 'in']):
+        condition_count += 1
+    if any(word in query_lower for word in ['builder', 'developer', 'rera']):
+        condition_count += 1
+    if any(word in query_lower for word in ['possession', 'status', 'ready']):
+        condition_count += 1
+
+    # If multiple conditions + complex indicators, definitely complex
+    if condition_count >= 3 and complex_count >= 1:
+        return "complex"
+
+    # If has complex indicators but fewer conditions, still complex
+    if complex_count >= 2:
+        return "complex"
+
+    # If multiple conditions without complex indicators, check threshold
+    if condition_count >= 3:
+        return "complex"
+
+    # MEDIUM QUERIES - Everything else (explanations, recommendations)
+    return "medium"
+
+
+def handle_query(query, user_id=None, chat_history=[], session_shown_ids=None, conversation_memory=None, last_intent=None):
+    """
+    Main routing handler for 3-layer architecture
+    """
+    if session_shown_ids is None:
+        session_shown_ids = set()
+
+    # Classify query complexity
+    query_type = classify_query(query)
+
+    print(f"🎯 Query classified as: {query_type.upper()}")
+
+    # Route to appropriate handler
+    if query_type == "simple":
+        return handle_simple_query(query, user_id, session_shown_ids)
+    elif query_type == "medium":
+        return handle_rag_query(query, user_id, chat_history, session_shown_ids, conversation_memory)
+    elif query_type == "complex":
+        return handle_agent_query(query, user_id, chat_history, session_shown_ids, conversation_memory)
+    else:
+        # Fallback to medium
+        return handle_rag_query(query, user_id, chat_history, session_shown_ids, conversation_memory)
+
+
+def handle_simple_query(query, user_id=None, session_shown_ids=None):
+    """
+    SIMPLE QUERY HANDLER - Database only, no LLM
+    Direct property/builder search with filters
+    """
+    if session_shown_ids is None:
+        session_shown_ids = set()
+
+    # Extract filters using existing logic
+    params = sync_extract_params(query)
+    query_lower = query.lower()
+
+    # Determine search type
+    is_builder_search = any(word in query_lower for word in ['builder', 'builders', 'developer', 'construction'])
+
+    if is_builder_search:
+        # BUILDER SEARCH
+        builders = []
+        location = params.get('location')
+
+        if location:
+            # Location-specific builder search
+            builders = Builder.query.filter(
+                (Builder.city.ilike(f'%{location}%')) |
+                (Builder.location.ilike(f'%{location}%'))
+            ).all()
+        else:
+            # General builder search - get top builders
+            builders = Builder.query.order_by(Builder.completed_projects.desc()).limit(10).all()
+
+        if builders:
+            # Format response
+            response = f"Found {len(builders)} builders"
+            if location:
+                response += f" in {location.title()}"
+
+            # Mark as shown
+            for b in builders[:10]:
+                session_shown_ids.add(str(b.rera_id))
+
+            return {
+                "query_type": "simple",
+                "data_sources_used": ["db"],
+                "response": response,
+                "properties": [],
+                "builders": builders,
+                "shown_ids": session_shown_ids,
+                "buffered_responses": []
+            }
+        else:
+            return {
+                "query_type": "simple",
+                "data_sources_used": ["db"],
+                "response": f"No builders found matching your criteria.",
+                "properties": [],
+                "builders": [],
+                "shown_ids": session_shown_ids,
+                "buffered_responses": []
+            }
+
+    else:
+        # PROPERTY SEARCH
+        properties = []
+        location = params.get('location')
+        budget = params.get('budget')
+        bhk = params.get('bhk')
+
+        # Build query
+        db_query = Property.query
+
+        if location:
+            db_query = db_query.filter(Property.Location.ilike(f'%{location}%'))
+
+        candidates = db_query.all()
+
+        # Apply filters
+        filtered = []
+        for p in candidates:
+            # Budget filter
+            if budget:
+                p_price = SmartFilter.parse_price(p.Price_Starting_From)
+                if p_price > float(budget) * 1.25:  # 25% buffer
+                    continue
+
+            # BHK filter
+            if bhk:
+                target = str(bhk).strip()
+                if target not in str(p.Existing_Configurations):
+                    continue
+
+            filtered.append(p)
+
+        # Sort by price
+        filtered.sort(key=lambda x: SmartFilter.parse_price(x.Price_Starting_From))
+
+        # Limit results
+        properties = filtered[:10]
+
+        if properties:
+            # Format response
+            response = f"Found {len(properties)} properties"
+            if location:
+                response += f" in {location.title()}"
+            if budget:
+                response += f" under {budget} Cr"
+            if bhk:
+                response += f" with {bhk} BHK"
+
+            # Mark as shown
+            for p in properties:
+                session_shown_ids.add(str(p.id))
+
+            return {
+                "query_type": "simple",
+                "data_sources_used": ["db"],
+                "response": response,
+                "properties": properties,
+                "builders": [],
+                "shown_ids": session_shown_ids,
+                "buffered_responses": []
+            }
+        else:
+            return {
+                "query_type": "simple",
+                "data_sources_used": ["db"],
+                "response": f"No properties found matching your criteria. Try adjusting your filters.",
+                "properties": [],
+                "builders": [],
+                "shown_ids": session_shown_ids,
+                "buffered_responses": []
+            }
+
+
+def handle_rag_query(query, user_id=None, chat_history=[], session_shown_ids=None, conversation_memory=None):
+    """
+    MEDIUM QUERY HANDLER - RAG + LLM
+    Retrieve relevant context and generate natural response
+    """
+    if session_shown_ids is None:
+        session_shown_ids = set()
+
+    try:
+        # Retrieve relevant documents
+        retriever = vectorstore.as_retriever(
+            search_type="mmr",
+            search_kwargs={"k": 8, "fetch_k": 30, "lambda_mult": 0.7}
+        )
+
+        docs = retriever.invoke(query)
+        context = "\n\n---\n\n".join([d.page_content for d in docs[:6]])
+
+        # Build context blocks
+        context_blocks = [f"RETRIEVED CONTEXT:\n{context}"]
+
+        # Add user preferences if available
+        if user_id:
+            prefs = UserPreference.query.filter_by(user_id=user_id).all()
+            if prefs:
+                p_text = ", ".join([f"{p.pref_key}: {p.pref_value}" for p in prefs])
+                context_blocks.append(f"USER PREFERENCES: {p_text}")
+
+        # Add conversation history
+        if chat_history:
+            history_text = "\n".join([f"User: {h[0]}\nAI: {h[1]}" for h in chat_history[-3:]])
+            context_blocks.append(f"RECENT CONVERSATION:\n{history_text}")
+
+        full_context = "\n\n".join(context_blocks)
+
+        # Setup LLM
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            temperature=0.3,
+            max_output_tokens=600,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+
+        prompt = f"""You are a helpful Real Estate Assistant.
+
+Based on the context provided, answer the user's question naturally and informatively.
+Keep the response conversational but informative (4-6 sentences).
+Focus on being helpful and providing relevant information.
+
+Context:
+{full_context}
+
+Question: {query}
+
+Response:"""
+
+        response = llm.invoke(prompt)
+        ai_response = response.content.strip()
+
+        # Extract relevant properties/builders from docs
+        properties = []
+        builders = []
+
+        for doc in docs:
+            doc_type = doc.metadata.get('type')
+            doc_id = doc.metadata.get('id')
+
+            if doc_type in ['property', 'project'] and doc_id:
+                prop = Property.query.get(int(doc_id))
+                if prop and prop.id not in [p.id for p in properties]:
+                    properties.append(prop)
+
+            elif doc_type == 'builder' and doc_id:
+                builder = Builder.query.get(doc_id)
+                if builder and builder not in builders:
+                    builders.append(builder)
+
+        # Limit and mark as shown
+        properties = properties[:8]
+        builders = builders[:8]
+
+        for p in properties:
+            session_shown_ids.add(str(p.id))
+        for b in builders:
+            session_shown_ids.add(str(b.rera_id))
+
+        return {
+            "query_type": "medium",
+            "data_sources_used": ["rag", "llm"],
+            "response": ai_response,
+            "properties": properties,
+            "builders": builders,
+            "shown_ids": session_shown_ids,
+            "buffered_responses": []
+        }
+
+    except Exception as e:
+        print(f"RAG query error: {e}")
+        # Fallback to simple query
+        return handle_simple_query(query, user_id, session_shown_ids)
+
+
+def handle_agent_query(query, user_id=None, chat_history=[], session_shown_ids=None, conversation_memory=None):
+    """
+    COMPLEX QUERY HANDLER - Multi-Agent System
+    Break query into sub-tasks, use multiple agents, combine results
+    """
+    if session_shown_ids is None:
+        session_shown_ids = set()
+
+    try:
+        # Extract query parameters
+        params = sync_extract_params(query)
+
+        # Create agents
+        agents_results = {}
+
+        # 1. Price Analysis Agent
+        price_agent_result = price_agent(query, params)
+        agents_results['price'] = price_agent_result
+
+        # 2. Location Analysis Agent
+        location_agent_result = location_agent(query, params)
+        agents_results['location'] = location_agent_result
+
+        # 3. Builder Trust Agent
+        builder_agent_result = builder_agent(query, params)
+        agents_results['builder'] = builder_agent_result
+
+        # 4. Investment Score Agent
+        investment_agent_result = investment_agent(query, params)
+        agents_results['investment'] = investment_agent_result
+
+        # Combine agent outputs
+        combined_context = build_combined_context(agents_results, query)
+
+        # Final LLM synthesis
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            temperature=0.2,
+            max_output_tokens=800,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+
+        final_prompt = f"""You are an expert Real Estate Investment Advisor.
+
+Based on the analysis from multiple specialized agents, provide a comprehensive recommendation.
+Consider all factors: price analysis, location insights, builder reputation, and investment potential.
+
+Agent Analysis:
+{combined_context}
+
+User Query: {query}
+
+Provide a detailed, balanced recommendation (6-8 sentences) that helps the user make an informed decision:"""
+
+        final_response = llm.invoke(final_prompt)
+        ai_response = final_response.content.strip()
+
+        # Collect all properties/builders from agents
+        all_properties = []
+        all_builders = []
+
+        for agent_result in agents_results.values():
+            if 'properties' in agent_result:
+                for p in agent_result['properties']:
+                    if p not in all_properties:
+                        all_properties.append(p)
+            if 'builders' in agent_result:
+                for b in agent_result['builders']:
+                    if b not in all_builders:
+                        all_builders.append(b)
+
+        # Limit results and mark as shown
+        all_properties = all_properties[:10]
+        all_builders = all_builders[:10]
+
+        for p in all_properties:
+            session_shown_ids.add(str(p.id))
+        for b in all_builders:
+            session_shown_ids.add(str(b.rera_id))
+
+        return {
+            "query_type": "complex",
+            "data_sources_used": ["db", "rag", "agents", "llm"],
+            "response": ai_response,
+            "properties": all_properties,
+            "builders": all_builders,
+            "shown_ids": session_shown_ids,
+            "agent_analysis": agents_results,
+            "buffered_responses": []
+        }
+
+    except Exception as e:
+        print(f"Agent query error: {e}")
+        # Fallback to RAG query
+        return handle_rag_query(query, user_id, chat_history, session_shown_ids, conversation_memory)
+
+
+# ============================================
+# AGENT IMPLEMENTATIONS
+# ============================================
+
+def price_agent(query, params):
+    """Price analysis agent - analyzes pricing trends and value"""
+    location = params.get('location')
+    budget = params.get('budget')
+
+    # Get properties in area
+    properties = []
+    if location:
+        properties = Property.query.filter(Property.Location.ilike(f'%{location}%')).all()
+    else:
+        properties = Property.query.limit(50).all()
+
+    # Analyze pricing
+    prices = []
+    for p in properties:
+        price = SmartFilter.parse_price(p.Price_Starting_From)
+        if price > 0:
+            prices.append(price)
+
+    if prices:
+        avg_price = sum(prices) / len(prices)
+        min_price = min(prices)
+        max_price = max(prices)
+
+        analysis = f"Price Analysis: Average price in area is {avg_price:.2f} Cr (Range: {min_price:.2f} - {max_price:.2f} Cr)"
+
+        if budget:
+            if float(budget) < min_price:
+                analysis += f". Your budget of {budget} Cr is below market minimum - consider nearby areas."
+            elif float(budget) > max_price:
+                analysis += f". Your budget of {budget} Cr exceeds local maximum - look for premium properties."
+
+        # Find best value properties
+        best_value = sorted(properties, key=lambda x: SmartFilter.parse_price(x.Price_Starting_From))[:5]
+
+        return {
+            "analysis": analysis,
+            "avg_price": avg_price,
+            "price_range": (min_price, max_price),
+            "properties": best_value
+        }
+    else:
+        return {"analysis": "Insufficient price data for analysis", "properties": []}
+
+
+def location_agent(query, params):
+    """Location analysis agent - evaluates location desirability"""
+    location = params.get('location')
+
+    if not location:
+        return {"analysis": "No specific location mentioned for analysis", "properties": []}
+
+    # Get properties in location
+    properties = Property.query.filter(Property.Location.ilike(f'%{location}%')).all()
+
+    # Simple location scoring based on available data
+    location_score = 5  # Default neutral score
+
+    # Factors that might indicate good location
+    good_indicators = ['metro', 'highway', 'airport', 'mall', 'hospital', 'school']
+    query_lower = query.lower()
+
+    positive_factors = sum(1 for indicator in good_indicators if indicator in query_lower)
+    location_score += positive_factors
+
+    # Cap at 10
+    location_score = min(location_score, 10)
+
+    analysis = f"Location Analysis: {location.title()} scores {location_score}/10 for desirability."
+
+    if location_score >= 8:
+        analysis += " Excellent connectivity and amenities."
+    elif location_score >= 6:
+        analysis += " Good location with decent infrastructure."
+    else:
+        analysis += " Consider exploring nearby areas with better connectivity."
+
+    return {
+        "analysis": analysis,
+        "location_score": location_score,
+        "properties": properties[:5]
+    }
+
+
+def builder_agent(query, params):
+    """Builder trust agent - evaluates builder reputation"""
+    location = params.get('location')
+
+    # Get builders in area
+    builders = []
+    if location:
+        builders = Builder.query.filter(
+            (Builder.city.ilike(f'%{location}%')) |
+            (Builder.location.ilike(f'%{location}%'))
+        ).all()
+    else:
+        builders = Builder.query.all()
+
+    if not builders:
+        return {"analysis": "No builder information available for this area", "builders": []}
+
+    # Score builders based on completed projects
+    scored_builders = []
+    for b in builders:
+        completed = getattr(b, 'completed_projects', 0) or 0
+        ongoing = getattr(b, 'ongoing_projects', 0) or 0
+
+        # Simple trust score
+        trust_score = min(completed * 2 + ongoing, 100)  # Cap at 100
+
+        scored_builders.append((b, trust_score))
+
+    # Sort by trust score
+    scored_builders.sort(key=lambda x: x[1], reverse=True)
+    top_builders = [b for b, score in scored_builders[:5]]
+
+    analysis = f"Builder Analysis: Found {len(builders)} builders in area. Top recommendations based on project completion history."
+
+    return {
+        "analysis": analysis,
+        "builders": top_builders,
+        "trust_scores": {getattr(b, 'company_name', 'Unknown'): score for b, score in scored_builders[:3]}
+    }
+
+
+def investment_agent(query, params):
+    """Investment score agent - evaluates investment potential"""
+    location = params.get('location')
+
+    # Simple investment scoring based on location and market factors
+    investment_score = 5  # Base score
+
+    if location:
+        location_lower = location.lower()
+        # High-growth areas
+        if any(area in location_lower for area in ['thane', 'navi mumbai', 'mumbai']):
+            investment_score += 3
+        # Moderate growth
+        elif any(area in location_lower for area in ['ghansoli', 'airoli', 'nerul']):
+            investment_score += 2
+
+    # Query indicates investment interest
+    if any(word in query.lower() for word in ['invest', 'roi', 'return', 'appreciation', 'future']):
+        investment_score += 2
+
+    investment_score = min(investment_score, 10)
+
+    analysis = f"Investment Analysis: Location scores {investment_score}/10 for investment potential."
+
+    if investment_score >= 8:
+        analysis += " Strong growth potential with good ROI expectations."
+    elif investment_score >= 6:
+        analysis += " Moderate investment potential - monitor market trends."
+    else:
+        analysis += " Consider areas with better long-term growth prospects."
+
+    return {
+        "analysis": analysis,
+        "investment_score": investment_score,
+        "recommendation": "High" if investment_score >= 8 else "Medium" if investment_score >= 6 else "Low"
+    }
+
+
+def build_combined_context(agents_results, original_query):
+    """Combine all agent outputs into context for final LLM"""
+    context_parts = []
+
+    for agent_name, result in agents_results.items():
+        if 'analysis' in result:
+            context_parts.append(f"{agent_name.upper()} AGENT: {result['analysis']}")
+
+    # Add original query context
+    context_parts.insert(0, f"ORIGINAL QUERY: {original_query}")
+
+    return "\n\n".join(context_parts)

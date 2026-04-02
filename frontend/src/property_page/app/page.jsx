@@ -16,45 +16,61 @@ import ExistingFloorPlansSection from '../components/sections/ExistingFloorPlans
 import ReadMoreAboutProperty from '../components/sections/ReadMoreAboutProperty';
 
 // Import API services
-import { fetchBuilderByName } from '../../services/api';
+import { fetchBuilderByName, fetchPropertyById } from '../../services/api';
 
 // Import styles
 import '../property_page_css/styles.css';
 
 const PropertyListingPage = () => {
   const [builderData, setBuilderData] = useState(null);
+  const [propertyData, setPropertyData] = useState(null);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
   const { id } = useParams(); // Get property ID from URL
 
   useEffect(() => {
-    const fetchBuilderData = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
 
-        // Get builder name from navigation state or fallback
-        const builderName = location.state?.builderName || "Hiranandani Group";
+        // First, fetch the property data
+        const property = await fetchPropertyById(id);
+        setPropertyData(property);
 
-        try {
-          const builder = await fetchBuilderByName(builderName);
-          setBuilderData(builder);
-          return;
-        } catch (err) {
-          console.log(`Builder "${builderName}" not found, using fallback data`);
+        // Then, fetch builder data based on the property's builder name
+        const builderName = property.Builder_Name;
+        if (builderName) {
+          try {
+            const builder = await fetchBuilderByName(builderName);
+            setBuilderData(builder);
+          } catch (err) {
+            console.log(`Builder "${builderName}" not found, using fallback data`);
+            // Use fallback builder data
+            setBuilderData({
+              company_name: builderName,
+              motto: "Building Dreams | Creating Realities",
+              ranking: 7,
+              total_cities: 123,
+              completed_projects: 23,
+              new_projects: 14,
+              established_year: 1995
+            });
+          }
+        } else {
+          // Fallback if no builder name
+          setBuilderData({
+            company_name: "Unknown Builder",
+            motto: "Building Dreams | Creating Realities",
+            ranking: 7,
+            total_cities: 123,
+            completed_projects: 23,
+            new_projects: 14,
+            established_year: 1995
+          });
         }
-
-        // Fallback static data if API fails
-        setBuilderData({
-          company_name: "Hiranandani Group",
-          motto: "Building Dreams | Creating Realities",
-          ranking: 7,
-          total_cities: 123,
-          completed_projects: 23,
-          new_projects: 14,
-          established_year: 1995
-        });
       } catch (error) {
-        console.log('Error in builder data fetch, using fallback');
+        console.log('Error fetching data, using fallback');
+        setPropertyData(null);
         setBuilderData({
           company_name: "Hiranandani Group",
           motto: "Building Dreams | Creating Realities",
@@ -69,8 +85,10 @@ const PropertyListingPage = () => {
       }
     };
 
-    fetchBuilderData();
-  }, [location.state]);
+    if (id) {
+      fetchData();
+    }
+  }, [id]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
@@ -84,8 +102,8 @@ const PropertyListingPage = () => {
         <DynamicBreadcrumb />
         <PropertyHeader />
         {!loading && <BuilderProfile builderData={builderData} />}
-        <PropertyHero />
-        <MainContentSection />
+        <PropertyHero propertyData={propertyData} />
+        <MainContentSection propertyData={propertyData} />
         <ExistingFloorPlansSection />
         <ReadMoreAboutProperty />
         <PropertyFooter />

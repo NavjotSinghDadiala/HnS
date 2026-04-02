@@ -7,7 +7,7 @@ import Button from "../ui/Button";
 import propertyHero from "../../../assets/property-hero.jpg"; // Using as placeholder
 import locationMap from "../../../assets/location-map.jpg";
 
-const MainContentSection = () => {
+const MainContentSection = ({ propertyData }) => {
   const overviewRef = React.useRef(null);
   const floorPlansRef = React.useRef(null);
   const amenitiesRef = React.useRef(null);
@@ -19,27 +19,58 @@ const MainContentSection = () => {
   const [showAllLeftOverview, setShowAllLeftOverview] = React.useState(false);
   const [showAllRightOverview, setShowAllRightOverview] = React.useState(false);
 
-  const overviewData = {
-    left: [
-      { label: "Possession", value: "Dec 2025" }, // Shortened label for mobile fit
-      { label: "RERA ID", value: "P51800012345" },
-      { label: "Location", value: "Ghansoli" },
-      { label: "Config", value: "3 BHK Flat" },
-      { label: "Price", value: "₹45L - ₹1.2Cr" }
-    ],
-    right: [
-      { label: "Carpet Area", value: "1250 sq.ft." },
-      { label: "Built-up", value: "1260 sq. ft." },
-      { label: "Parking", value: "Available" },
-      { label: "Approved by", value: "PMC | BBMP" },
-      { label: "Loans", value: "SBI | HDFC" }
-    ]
-  };
+  const overviewData = React.useMemo(() => {
+    if (!propertyData) {
+      return {
+        left: [
+          { label: "Possession", value: "Dec 2025" },
+          { label: "RERA ID", value: "P51800012345" },
+          { label: "Location", value: "Ghansoli" },
+          { label: "Config", value: "3 BHK Flat" },
+          { label: "Price", value: "₹45L - ₹1.2Cr" }
+        ],
+        right: [
+          { label: "Carpet Area", value: "1250 sq.ft." },
+          { label: "Built-up", value: "1260 sq. ft." },
+          { label: "Parking", value: "Available" },
+          { label: "Approved by", value: "PMC | BBMP" },
+          { label: "Loans", value: "SBI | HDFC" }
+        ]
+      };
+    }
 
-  const highlights = [
-    "Recently Renovated", "Gated Society", "Visitor Parking", 
-    "Corner Property", "Park View", "Maintenance Staff"
-  ];
+    return {
+      left: [
+        { label: "Possession", value: propertyData.Possession_Date || "TBD" },
+        { label: "RERA ID", value: propertyData.RERA_ID || "N/A" },
+        { label: "Location", value: propertyData.Location || "Unknown" },
+        { label: "Config", value: propertyData.Existing_Configurations || "N/A" },
+        { label: "Price", value: propertyData.Price_Starting_From || "Ask for Price" }
+      ],
+      right: [
+        { label: "Carpet Area", value: propertyData.Carpet_Area || "N/A" },
+        { label: "Built-up", value: propertyData.Built_up_Area || "N/A" },
+        { label: "Parking", value: propertyData.Parking || "N/A" },
+        { label: "Approved by", value: propertyData.Approved_by_Authorities || "N/A" },
+        { label: "Loans", value: propertyData.Loan_Availability || "N/A" }
+      ]
+    };
+  }, [propertyData]);
+
+  const highlights = React.useMemo(() => {
+    if (propertyData?.Key_Highlights) {
+      try {
+        const parsed = JSON.parse(propertyData.Key_Highlights);
+        return Array.isArray(parsed) ? parsed : [propertyData.Key_Highlights];
+      } catch {
+        return [propertyData.Key_Highlights];
+      }
+    }
+    return [
+      "Recently Renovated", "Gated Society", "Visitor Parking", 
+      "Corner Property", "Park View", "Maintenance Staff"
+    ];
+  }, [propertyData]);
 
   return (
     <section className="py-4 sm:py-8 lg:py-16 bg-gray-50/30">

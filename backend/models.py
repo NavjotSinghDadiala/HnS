@@ -28,6 +28,15 @@ class User(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+    def check_password(self, raw_password: str) -> bool:
+        """
+        Minimal password check for the local admin promotion endpoint.
+        Current codebase stores the initial admin password as plain text.
+        """
+        if raw_password is None:
+            return False
+        return str(self.password) == str(raw_password)
+
 class Agent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)

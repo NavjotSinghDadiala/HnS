@@ -1,8 +1,9 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from models import Builder, ChatSession, ChatMessage, UserInteraction, Property, User
 from extensions import db 
 from sqlalchemy.exc import DataError, IntegrityError, OperationalError
 from sqlalchemy import text
+from auth import clerk_required
 from .rag_service import (
     get_chatbot_response, 
     sync_properties_to_vectordb, 
@@ -13,7 +14,8 @@ from .rag_service import (
     classify_intent,
     UserIntent,
     format_property_details,
-    format_builder_details
+    format_builder_details,
+    handle_query
 )
 
 chatbot_bp = Blueprint('chatbot', __name__)
@@ -105,7 +107,7 @@ def sync_db():
 
 
 @chatbot_bp.route('/ask', methods=['POST'])
-@clerk_required()
+@clerk_required(optional=True)
 def ask_bot():
     """
     Enhanced chatbot endpoint with improved pagination
@@ -115,7 +117,7 @@ def ask_bot():
     """
     data = request.json
     user_message = data.get('message')
-    user_id = data.get('user_id') 
+    user_id = g.current_user.id if g.current_user else None
     session_id = data.get('session_id')
 
     if not user_message:
@@ -265,7 +267,8 @@ def ask_bot():
         # Keep a copy of previously shown IDs to determine what's newly shown
         prev_shown = set(session_data['shown_ids'])
 
-        ai_response, updated_shown_ids, all_properties, all_builders, last_intent, buffered_responses = get_chatbot_response(
+        # Use new 3-layer routing architecture
+        result = handle_query(
             user_message, 
             user_id, 
             chat_history,
@@ -274,8 +277,28 @@ def ask_bot():
             last_intent=session_data.get('last_intent')
         )
         
-        # Save last intent for this session
-        session_data['last_intent'] = last_intent
+        # Extract results from new format
+        ai_response = result["response"]
+        query_type = result["query_type"]
+        data_sources = result["data_sources_used"]
+        all_properties = result.get("properties", [])
+        all_builders = result.get("builders", [])
+        updated_shown_ids = result.get("shown_ids", session_data['shown_ids'])
+        buffered_responses = result.get("buffered_responses", [])
+        
+        # Save last intent for this session (map query_type to intent)
+        intent_mapping = {
+            "simple": "search_properties" if all_properties else "search_builders",
+            "medium": "ask_general",
+            "complex": "compare"
+        }
+        session_data['last_intent'] = intent_mapping.get(query_type, "ask_general")
+        
+        # Update session data with ALL results (convert to dict immediately to avoid SQLAlchemy session issues)
+        session_data['shown_ids'] = updated_shown_ids
+        session_data['all_properties'] = [p.to_dict() if hasattr(p, 'to_dict') else p for p in all_properties]
+        session_data['all_builders'] = [b.to_dict() if hasattr(b, 'to_dict') else b for b in all_builders]
+        session_data['current_page'] = 0  # Reset to first page
         
         # Update session data with ALL results (convert to dict immediately to avoid SQLAlchemy session issues)
         session_data['shown_ids'] = updated_shown_ids
@@ -301,9 +324,9 @@ def ask_bot():
         session_data['last_shown_properties'] = [p.get('id') for p in properties_to_show]
         session_data['last_shown_builders'] = [b.get('id') for b in builders_to_show]
         # Enforce intent-specific visibility: if user asked for properties only, don't show builders and vice versa
-        if last_intent == 'search_properties':
+        if session_data.get('last_intent') == 'search_properties':
             builders_to_show = []
-        elif last_intent == 'search_builders':
+        elif session_data.get('last_intent') == 'search_builders':
             properties_to_show = []
 
         # Track cursor offsets for robust pagination per latest result set
@@ -319,9 +342,9 @@ def ask_bot():
         # Check if there are more unseen results available for the requested type only
         remaining_props = [p for p in session_data['all_properties'] if str(p.get('id')) not in session_data['shown_ids']]
         remaining_builders = [b for b in session_data['all_builders'] if str(b.get('id')) not in session_data['shown_ids']]
-        if last_intent == 'search_properties':
+        if session_data.get('last_intent') == 'search_properties':
             has_more = len(remaining_props) > 0
-        elif last_intent == 'search_builders':
+        elif session_data.get('last_intent') == 'search_builders':
             has_more = len(remaining_builders) > 0
         else:
             has_more = len(remaining_props) > 0 or len(remaining_builders) > 0
@@ -362,6 +385,8 @@ def ask_bot():
                 final_buffered.append(item)
         return jsonify({
             "response": ai_response,
+            "query_type": query_type,
+            "data_sources_used": data_sources,
             "last_intent": session_data.get('last_intent'),
             "properties": [p.to_dict() if hasattr(p, 'to_dict') else p for p in properties_to_show],
             "builders": [b.to_dict() if hasattr(b, 'to_dict') else b for b in builders_to_show],
@@ -532,23 +557,12 @@ def load_more():
 def create_session():
     """Create a new chat session"""
     try:
-        data = request.get_json(silent=True) or {}
-        raw_user_id = data.get('user_id')
+        # Use the authenticated user from clerk_required decorator
+        user = g.current_user
+        user_id = user.id if user else None
 
-        # Allow anonymous sessions when user_id is not provided.
-        user_id = None
-        if raw_user_id not in (None, ""):
-            try:
-                user_id = int(raw_user_id)
-            except (TypeError, ValueError):
-                return jsonify({"error": "Invalid user_id. It must be an integer."}), 400
-
-            # Validate foreign key target early to avoid DB-level 500s.
-            if not User.query.get(user_id):
-                return jsonify({"error": f"user_id {user_id} does not exist."}), 404
-        
         new_session = ChatSession(
-            user_id=user_id, 
+            user_id=user_id,
             title="New Chat",
             state='initial',
             status='active'
@@ -753,7 +767,7 @@ def update_user_preference(user_id):
 # FEATURE 5: BEHAVIORAL TRACKING ENDPOINT
 # ============================================
 
-@chatbot_bp.route('/track', methods=['POST'])
+@chatbot_bp.route('/track-interaction', methods=['POST'])
 def track_interaction():
     """Track when user views/clicks a property"""
     try:

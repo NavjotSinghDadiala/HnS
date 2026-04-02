@@ -5,21 +5,22 @@ import Sidebar from '../Builder.jsx/Sidebar'; // Adjust import path if needed
 const DashboardLayout = () => {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
+  const localAuth = localStorage.getItem('local_auth');
 
   // Check if user is logged in and has appropriate role
   React.useEffect(() => {
-    if (!user) {
+    if (!user && !localAuth) {
       navigate('/login');
       return;
     }
 
     // If user is not admin and trying to access admin routes
-    if (user.role !== 'admin' && window.location.pathname.startsWith('/dashboard/admin')) {
+    if (user && user.role !== 'admin' && window.location.pathname.startsWith('/dashboard/admin')) {
       navigate('/');
     }
-  }, [user, navigate]);
+  }, [user, localAuth, navigate]);
 
-  if (!user) {
+  if (!user && !localAuth) {
     return null; // Don't render anything while checking auth
   }
 

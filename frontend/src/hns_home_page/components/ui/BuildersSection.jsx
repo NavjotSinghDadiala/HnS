@@ -3,8 +3,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "../../home_page_css/BuildersSection.css";
 import SectionHeading from './SectionHeading';
+import { useGeolocation, reverseGeocodeToArea } from '../../../hooks/useGeolocation';
 
-const TABS = [
+const DEFAULT_TABS = [
   { label: "Thane", key: "thane" },
   { label: "Airoli", key: "airoli" },
   { label: "Ghansoli", key: "ghansoli" },
@@ -33,17 +34,63 @@ const BuildersSection = ({ searchFilters }) => {
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [tabs, setTabs] = useState(DEFAULT_TABS);
+  const [userLocation, setUserLocation] = useState(null);
 
   const tabRowRef = useRef(null);
   const cardsRowRef = useRef(null);
+
+  // Get user's geolocation
+  const geo = useGeolocation();
+
+  // On mount or when geolocation changes, detect user's area and fetch nearby areas
+  useEffect(() => {
+    const detectLocationAndFetchNearby = async () => {
+      if (!geo.latitude || !geo.longitude) return;
+
+      try {
+        // Step 1: Determine the area from coordinates
+        const detectedArea = await reverseGeocodeToArea(geo.latitude, geo.longitude);
+        setUserLocation(detectedArea);
+
+        // Step 2: Fetch nearby areas from backend
+        const response = await fetch(
+          `${API_BASE_URL}/api/nearest-nodes/${detectedArea}`
+        );
+        const nearbyData = await response.json();
+
+        if (nearbyData.nearestNodes) {
+          // Create tabs for user's location + nearby areas
+          const nearbyLocations = [detectedArea, ...nearbyData.nearestNodes];
+          const newTabs = nearbyLocations.map((loc) => ({
+            label: loc.charAt(0).toUpperCase() + loc.slice(1),
+            key: loc.toLowerCase().replace(/\s+/g, ''),
+          }));
+
+          setTabs(newTabs);
+          setActiveTab(newTabs[0].key); // Set active to user's current location
+        }
+      } catch (err) {
+        console.error('Error detecting location:', err);
+        // Fallback to default tabs
+        setTabs(DEFAULT_TABS);
+      }
+    };
+
+    detectLocationAndFetchNearby();
+  }, [geo.latitude, geo.longitude]);
 
   // Fetch properties whenever activeTab changes
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        // Find the full location name from tabs
+        const tabData = tabs.find(t => t.key === activeTab);
+        const locationQuery = tabData ? tabData.label.toLowerCase() : activeTab;
+
         const res = await fetch(
-          `${API_BASE_URL}/api/properties/location/${activeTab}`
+          `${API_BASE_URL}/api/properties/location/${locationQuery}`
         );
         const data = await res.json();
         // Add Existing_Configurations to mapped data
@@ -66,7 +113,7 @@ const BuildersSection = ({ searchFilters }) => {
       }
     };
     fetchData();
-  }, [activeTab]);
+  }, [activeTab, tabs]);
 
 
   const navigate = useNavigate();
@@ -96,7 +143,7 @@ const BuildersSection = ({ searchFilters }) => {
   return (
     <section className="landing-section bg-cream builders-section">
       <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-        <h2 style={{ 
+        <h2 style={{
           fontSize: '2.5rem',
           fontWeight: 800,
           color: '#223A5F',
@@ -106,7 +153,7 @@ const BuildersSection = ({ searchFilters }) => {
         }}>
           Near You
         </h2>
-        <span style={{ 
+        <span style={{
           display: 'block',
           width: '80px',
           height: '4px',
@@ -120,7 +167,7 @@ const BuildersSection = ({ searchFilters }) => {
       {/* Tabs */}
       <div className="builders-tab-row-container">
         <div className="builders-tab-row-scrollable" ref={tabRowRef}>
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}

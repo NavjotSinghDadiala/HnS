@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaUserCircle, FaRegUserCircle, FaShoppingCart } from 'react-icons/fa'; // ← Removed unused FaBars, FaTimes
+import { FaUserCircle, FaRegUserCircle, FaShoppingCart, FaBars, FaTimes } from 'react-icons/fa';
 import { MdTravelExplore, MdHome, MdBusiness, MdArticle } from 'react-icons/md';
 import { Link } from 'react-router-dom';
 import { SignedIn, SignedOut, UserButton, useUser } from '@clerk/clerk-react';

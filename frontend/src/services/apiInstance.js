@@ -21,10 +21,10 @@ export const getOrCreateGuestId = () => {
   if (!guestId) {
     guestId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
   }
-  
+
   // Always set/refresh the cookie to give them 15 more minutes
-  setCookie('hns_guest_id', guestId, 15); 
-  
+  setCookie('hns_guest_id', guestId, 15);
+
   return guestId;
 };
 
@@ -32,21 +32,29 @@ const api = axios.create({
   baseURL: API_URL,
 });
 
-// Request Interceptor: Attach Clerk Token
+// Request Interceptor: Attach Local Auth or Clerk Token
 api.interceptors.request.use(async (config) => {
   try {
-    // Check if Clerk is initialized and session is available on window
-    const clerk = window.Clerk;
-    if (clerk?.session) {
-      const token = await clerk.session.getToken();
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    // Check for local auth credentials (email:password base64 encoded)
+    const localAuth = localStorage.getItem('local_auth');
+    if (localAuth) {
+      // localAuth should be in format "email:password"
+      const encoded = btoa(localAuth);
+      config.headers.Authorization = `Bearer ${encoded}`;
+    } else {
+      // Check if Clerk is initialized and session is available on window
+      const clerk = window.Clerk;
+      if (clerk?.session) {
+        const token = await clerk.session.getToken();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
       }
     }
-    
+
     // Always include Guest ID for merge & tracking
     config.headers['X-Guest-ID'] = getOrCreateGuestId();
-    
+
     return config;
   } catch (error) {
     return Promise.reject(error);

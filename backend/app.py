@@ -27,6 +27,7 @@ from clerk_backend_api.security import AuthenticateRequestOptions
 
 #flash
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, set_access_cookies, set_refresh_cookies, get_jwt_identity, unset_jwt_cookies
 import os
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
@@ -91,6 +92,7 @@ CORS(
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Guest-ID", "x-guest-id"],
 )
+jwt = JWTManager(app)
 
 
 @app.after_request
@@ -133,7 +135,7 @@ os.makedirs(instance_dir, exist_ok=True)  # This line fixes most issues
 
 
 # Use PostgreSQL (DATABASE_URL from .env)
-_db_url = os.getenv('DATABASE_URL', f"sqlite:///{os.path.join(instance_dir, 'hns.db')}")
+_db_url = "sqlite:///" + os.path.join(basedir, "instance", "hns.db").replace("\\", "/")
 # SQLAlchemy requires 'postgresql://' not 'postgres://' (Heroku-style URLs)
 if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
@@ -176,13 +178,12 @@ with app.app_context():
         admin = User.query.filter_by(email='admin@gmail.com').first()
         if not admin:
             # Create admin user
-            admin = User(
-                username='admin',
-                email='admin@gmail.com',
-                password='admin',  # Plain text password
-                role='admin',
-                is_active=True
-            )
+            admin = User()
+            admin.username = 'admin'
+            admin.email = 'admin@gmail.com'
+            admin.password = 'admin'  # Plain text password
+            admin.role = 'admin'
+            admin.is_active = True
             db.session.add(admin)
             db.session.commit()
             print("Admin created successfully!")
@@ -998,6 +999,222 @@ def get_admin_stats():
         import traceback
         print(traceback.format_exc())  # Print full stack trace
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/graph', methods=['GET'])
+@admin_only
+def get_admin_graph():
+    """Build a dynamic knowledge graph from DB entities for admin visualization."""
+    def _parse_json_list(raw):
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            return [str(x).strip() for x in raw if str(x).strip()]
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(x).strip() for x in parsed if str(x).strip()]
+                if isinstance(parsed, dict):
+                    return [str(k).strip() for k in parsed.keys() if str(k).strip()]
+            except Exception:
+                pass
+            return [part.strip() for part in text.split(',') if part.strip()]
+        return []
+
+    def _extract_city(location_text):
+        if not location_text:
+            return 'Unknown'
+        parts = [p.strip() for p in str(location_text).split(',') if p.strip()]
+        return parts[-1] if parts else str(location_text).strip()
+
+    def _parse_price(raw_price):
+        if raw_price is None:
+            return None
+        if isinstance(raw_price, (int, float)):
+            return float(raw_price)
+
+        text = str(raw_price).lower().replace(',', '').strip()
+        if not text:
+            return None
+
+        match = re.search(r'(\d+(?:\.\d+)?)', text)
+        if not match:
+            return None
+
+        value = float(match.group(1))
+        if 'crore' in text or 'cr' in text:
+            value *= 10000000
+        elif 'lakh' in text or 'lac' in text or 'lakhs' in text:
+            value *= 100000
+        elif 'k' in text:
+            value *= 1000
+        return value
+
+    try:
+        properties = Property.query.all()
+        builders = Builder.query.all()
+        projects = BuilderProject.query.all()
+
+        builder_by_id = {b.rera_id: b for b in builders}
+        builder_by_name = {}
+        for b in builders:
+            for key in [b.company_name, b.brand_name, b.rera_id]:
+                if key:
+                    builder_by_name[str(key).strip().lower()] = b
+
+        project_count_by_builder = {}
+        for b in builders:
+            project_count_by_builder[b.rera_id] = len(b.projects or [])
+        max_builder_projects = max(project_count_by_builder.values(), default=1)
+
+        location_count = {}
+        for p in properties:
+            location_key = (p.Location or '').strip() or 'Unknown'
+            location_count[location_key] = location_count.get(location_key, 0) + 1
+        max_location_count = max(location_count.values(), default=1)
+
+        parsed_prices = []
+        max_amenity_count = 1
+        for p in properties:
+            project = p.project
+            price_value = _parse_price(p.Price_Starting_From or p.Pricing or (project.price_range if project else None))
+            if price_value is not None:
+                parsed_prices.append(price_value)
+
+            amenities_probe = []
+            if project and project.amenities:
+                amenities_probe = _parse_json_list(project.amenities)
+            elif p.Highlights:
+                amenities_probe = _parse_json_list(p.Highlights)
+            max_amenity_count = max(max_amenity_count, len(amenities_probe))
+
+        min_price = min(parsed_prices) if parsed_prices else None
+        max_price = max(parsed_prices) if parsed_prices else None
+        amenity_weight = 0.06
+        score_denominator = 1.0 + (max_amenity_count * amenity_weight) + 1.0 + 1.0
+
+        nodes = {}
+        edges = set()
+
+        def _add_node(node_id, node_type, label, **extra):
+            if node_id not in nodes:
+                node_data = {'id': node_id, 'type': node_type, 'label': label}
+                node_data.update(extra)
+                nodes[node_id] = node_data
+
+        def _add_edge(source, target, edge_type):
+            if source and target:
+                edges.add((source, target, edge_type))
+
+        for b in builders:
+            builder_id = f"builder_{slugify(str(b.rera_id or b.company_name or b.brand_name or 'unknown'))}"
+            builder_label = b.company_name or b.brand_name or b.rera_id
+            _add_node(builder_id, 'builder', builder_label, city=b.city or 'Unknown')
+
+        for project in projects:
+            project_id = f"project_{project.id}"
+            project_label = project.title or f"Project {project.id}"
+            _add_node(project_id, 'project', project_label)
+
+            builder_id = f"builder_{slugify(str(project.builder_id or project.builder_name or 'unknown'))}"
+            if builder_id not in nodes and project.builder_name:
+                _add_node(builder_id, 'builder', project.builder_name)
+            _add_edge(builder_id, project_id, 'has_project')
+
+        property_scores = []
+
+        for p in properties:
+            property_id = f"property_{p.id}"
+            property_label = p.Property_Name or f"Property {p.id}"
+            location_text = (p.Location or (p.project.location if p.project else None) or 'Unknown').strip() if isinstance((p.Location or (p.project.location if p.project else None) or 'Unknown'), str) else 'Unknown'
+            city = _extract_city(location_text)
+
+            matched_builder = None
+            if p.project and p.project.builder_id and p.project.builder_id in builder_by_id:
+                matched_builder = builder_by_id[p.project.builder_id]
+            elif p.Builder_Name:
+                matched_builder = builder_by_name.get(p.Builder_Name.strip().lower())
+
+            if matched_builder:
+                builder_node_id = f"builder_{slugify(str(matched_builder.rera_id or matched_builder.company_name or matched_builder.brand_name))}"
+                builder_label = matched_builder.company_name or matched_builder.brand_name or matched_builder.rera_id
+                builder_project_score = project_count_by_builder.get(matched_builder.rera_id, 0)
+            elif p.project and p.project.builder_name:
+                builder_node_id = f"builder_{slugify(str(p.project.builder_name))}"
+                builder_label = p.project.builder_name
+                builder_project_score = 0
+            elif p.Builder_Name:
+                builder_node_id = f"builder_{slugify(str(p.Builder_Name))}"
+                builder_label = p.Builder_Name
+                builder_project_score = 0
+            else:
+                builder_node_id = 'builder_unknown'
+                builder_label = 'Unknown Builder'
+                builder_project_score = 0
+
+            _add_node(builder_node_id, 'builder', builder_label)
+            _add_edge(property_id, builder_node_id, 'built_by')
+
+            location_node_id = f"location_{slugify(location_text)}"
+            _add_node(location_node_id, 'location', location_text, city=city)
+            _add_edge(property_id, location_node_id, 'located_in')
+
+            amenities = []
+            if p.project and p.project.amenities:
+                amenities = _parse_json_list(p.project.amenities)
+            elif p.Highlights:
+                amenities = _parse_json_list(p.Highlights)
+
+            for amenity in amenities:
+                amenity_node_id = f"amenity_{slugify(amenity)}"
+                _add_node(amenity_node_id, 'amenity', amenity)
+                _add_edge(property_id, amenity_node_id, 'has_amenity')
+
+            raw_price = p.Price_Starting_From or p.Pricing or (p.project.price_range if p.project else None)
+            parsed_price = _parse_price(raw_price)
+
+            if parsed_price is None or min_price is None or max_price is None or max_price == min_price:
+                normalized_price = 0.5
+            else:
+                normalized_price = 1.0 - ((parsed_price - min_price) / (max_price - min_price))
+                normalized_price = max(0.0, min(1.0, normalized_price))
+
+            amenity_score = len(amenities) * amenity_weight
+            builder_reputation = builder_project_score / max_builder_projects if max_builder_projects else 0.0
+            location_popularity = location_count.get(location_text, 0) / max_location_count if max_location_count else 0.0
+
+            total_raw_score = normalized_price + amenity_score + builder_reputation + location_popularity
+            score = round(max(0.0, min(1.0, total_raw_score / score_denominator)), 4)
+
+            _add_node(
+                property_id,
+                'property',
+                property_label,
+                score=score,
+                city=city,
+                builder_label=builder_label,
+                amenity_count=len(amenities)
+            )
+            property_scores.append((property_id, score))
+
+        top_property_ids = [pid for pid, _ in sorted(property_scores, key=lambda x: x[1], reverse=True)[:5]]
+        for pid in top_property_ids:
+            if pid in nodes:
+                nodes[pid]['is_top'] = True
+
+        return jsonify({
+            'nodes': list(nodes.values()),
+            'edges': [{'source': s, 'target': t, 'type': et} for (s, t, et) in edges],
+            'meta': {
+                'top_properties': top_property_ids
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to build admin graph: {str(e)}'}), 500
 
 #--------------------------------------------- USER MANAGEMENT ROUTES ---------------------------------------------
 @app.route('/api/users', methods=['GET'])
@@ -2175,13 +2392,19 @@ def merge_guest_data():
             fav.guest_id = None
     
     # Update interactions
-    UserInteraction.query.filter_by(guest_id=guest_id).update({
-        'user_id': g.current_user.id,
-        'guest_id': None
-    })
-    # Note: If you have a guest_id column in UserInteraction, update that too.
-    
+    # This is best-effort: your DB schema may not have `user_interaction.guest_id`
+    # (migration drift), which would otherwise cause a 500 and break the entire merge.
     db.session.commit()
+    try:
+        UserInteraction.query.filter_by(guest_id=guest_id).update({
+            'user_id': g.current_user.id,
+            'guest_id': None
+        })
+        db.session.commit()
+    except Exception as ie:
+        db.session.rollback()
+        print(f"Interaction merge error (best-effort): {ie}")
+    
     return jsonify({'message': 'Data merged successfully'}), 200
 
 
@@ -2197,7 +2420,260 @@ app.register_blueprint(chatbot_bp, url_prefix='/api/chatbot')
 # automatically create the new chatbot tables because we imported them above.
 
 
+@app.route('/api/graph', methods=['GET'])
+def get_graph():
+    try:
+        builders = Builder.query.all()
+        projects = BuilderProject.query.all()
+        properties = Property.query.all()
 
+        nodes = []
+        links = []   # ✅ use links (not edges)
+        node_ids = set()
+
+        # -------------------------
+        # BUILDERS
+        # -------------------------
+        for builder in builders:
+            node_id = f"builder_{builder.rera_id}"
+
+            if node_id not in node_ids:
+                nodes.append({
+                    "id": node_id,
+                    "type": "builder",
+                    "label": builder.company_name or "Unknown Builder"
+                })
+                node_ids.add(node_id)
+
+        # -------------------------
+        # PROJECTS
+        # -------------------------
+        for project in projects:
+            project_node_id = f"project_{project.id}"
+
+            if project_node_id not in node_ids:
+                nodes.append({
+                    "id": project_node_id,
+                    "type": "project",
+                    "label": project.title or "Unnamed Project"
+                })
+                node_ids.add(project_node_id)
+
+            if project.builder_id:
+                builder_node_id = f"builder_{project.builder_id}"
+
+                if builder_node_id in node_ids:
+                    links.append({
+                        "source": builder_node_id,
+                        "target": project_node_id,
+                        "type": "BUILDS"
+                    })
+
+        # -------------------------
+        # PROPERTIES
+        # -------------------------
+        for prop in properties:
+            property_node_id = f"property_{prop.id}"
+
+            if property_node_id not in node_ids:
+                nodes.append({
+                    "id": property_node_id,
+                    "type": "property",
+                    "label": prop.Property_Name or "Unnamed Property"
+                })
+                node_ids.add(property_node_id)
+
+            if prop.project_id:
+                project_node_id = f"project_{prop.project_id}"
+
+                if project_node_id in node_ids:
+                    links.append({
+                        "source": project_node_id,
+                        "target": property_node_id,
+                        "type": "CONTAINS"
+                    })
+
+        return jsonify({
+            "nodes": nodes,
+            "links": links   # ✅ THIS IS THE FIX
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+
+@app.route('/graph-view')
+def graph_view():
+    return """
+    <html>
+    <head>
+        <title>AI Smart Graph</title>
+        <script src="https://unpkg.com/force-graph"></script>
+        <style>
+            body { margin: 0; font-family: Arial; }
+            #graph { width: 100vw; height: 100vh; }
+
+            #controls {
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                background: white;
+                padding: 10px;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.2);
+                z-index: 10;
+            }
+
+            input {
+                padding: 5px;
+                margin-bottom: 5px;
+                width: 200px;
+            }
+
+            button {
+                margin: 2px;
+                padding: 5px 10px;
+                cursor: pointer;
+            }
+        </style>
+    </head>
+    <body>
+
+        <div id="controls">
+            <input id="search" placeholder="Search node..." />
+            <br/>
+            <button onclick="filterType('all')">All</button>
+            <button onclick="filterType('builder')">Builders</button>
+            <button onclick="filterType('project')">Projects</button>
+            <button onclick="filterType('property')">Properties</button>
+        </div>
+
+        <div id="graph"></div>
+
+        <script>
+            let fullData = null;
+            let Graph = null;
+
+            fetch('/api/graph')
+                .then(res => res.json())
+                .then(data => {
+                    fullData = data;
+
+                    Graph = ForceGraph()(document.getElementById('graph'))
+                        .graphData(data)
+
+                        .nodeAutoColorBy('type')
+
+                        .nodeLabel(n => `${n.type} → ${n.label}`)
+
+                        .nodeCanvasObject((node, ctx, scale) => {
+                            const label = node.label;
+                            const fontSize = 12 / scale;
+                            ctx.font = `${fontSize}px Sans-Serif`;
+
+                            ctx.fillStyle = node.color;
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI);
+                            ctx.fill();
+
+                            ctx.fillStyle = "black";
+                            ctx.fillText(label, node.x + 6, node.y + 3);
+                        })
+
+                        // 🔥 AI CLICK BEHAVIOR
+                        .onNodeClick(node => {
+                            highlightNeighbors(node);
+                            focusNode(node);
+                        })
+
+                        .d3Force('charge').strength(-120)
+                        .d3Force('link').distance(80);
+                });
+
+            // =========================
+            // 🧠 HIGHLIGHT LOGIC (AI)
+            // =========================
+            function highlightNeighbors(node) {
+                const neighbors = new Set();
+                const links = fullData.links;
+
+                links.forEach(link => {
+                    if (link.source.id === node.id) {
+                        neighbors.add(link.target.id);
+                    }
+                    if (link.target.id === node.id) {
+                        neighbors.add(link.source.id);
+                    }
+                });
+
+                Graph.nodeColor(n => {
+                    if (n.id === node.id) return 'red';
+                    if (neighbors.has(n.id)) return 'orange';
+                    return '#ccc';
+                });
+
+                Graph.linkColor(l => {
+                    if (l.source.id === node.id || l.target.id === node.id) {
+                        return 'red';
+                    }
+                    return '#ddd';
+                });
+            }
+
+            // =========================
+            // 🎯 FOCUS NODE
+            // =========================
+            function focusNode(node) {
+                Graph.centerAt(node.x, node.y, 1000);
+                Graph.zoom(4, 1000);
+            }
+
+            // =========================
+            // 🔍 SEARCH
+            // =========================
+            document.getElementById('search').addEventListener('input', function(e) {
+                const value = e.target.value.toLowerCase();
+
+                const node = fullData.nodes.find(n =>
+                    n.label.toLowerCase().includes(value)
+                );
+
+                if (node) {
+                    highlightNeighbors(node);
+                    focusNode(node);
+                }
+            });
+
+            // =========================
+            // 🎛 FILTER
+            // =========================
+            function filterType(type) {
+                if (type === 'all') {
+                    Graph.graphData(fullData);
+                    return;
+                }
+
+                const filteredNodes = fullData.nodes.filter(n => n.type === type);
+                const ids = new Set(filteredNodes.map(n => n.id));
+
+                const filteredLinks = fullData.links.filter(l =>
+                    ids.has(l.source.id || l.source) &&
+                    ids.has(l.target.id || l.target)
+                );
+
+                Graph.graphData({
+                    nodes: filteredNodes,
+                    links: filteredLinks
+                });
+            }
+        </script>
+
+    </body>
+    </html>
+    """
 # ------------------------------------------------------------------ Admin Auth
 @app.route('/api/auth/me', methods=['GET'])
 @clerk_required()
@@ -2218,50 +2694,49 @@ def get_current_user_profile():
 
 
 @app.route('/api/auth/promote-admin', methods=['POST'])
-@clerk_required()
 def promote_to_admin():
     """
-    Enhanced Admin Setup/Login:
-    Requires:
-    1. Email must be admin@gmail.com
-    2. Local database password check
-    3. ADMIN_SETUP_KEY check
+    Admin promotion - works with local auth or Clerk
+    Checks database first, then uses Clerk if available
     """
-    ADMIN_SETUP_KEY = os.getenv('ADMIN_SETUP_KEY', '')
-    if not ADMIN_SETUP_KEY:
-        return jsonify({'error': 'Admin promotion is disabled. ADMIN_SETUP_KEY is not set.'}), 403
-    
     data = request.json or {}
     email = data.get('email', '')
     password = data.get('password', '')
-    provided_key = data.get('setup_key', '')
     
-    # 1. Exclusive Email Check
+    # Check if user is authenticated via local auth (from clerk_required decorator)
+    if hasattr(g, 'current_user') and g.current_user:
+        # User is authenticated, check if they're admin@gmail.com
+        if g.current_user.email != 'admin@gmail.com':
+            return jsonify({'error': 'Unauthorized email for admin access.'}), 403
+        
+        # Check password
+        if not g.current_user.check_password(password):
+            return jsonify({'error': 'Invalid admin password.'}), 401
+        
+        # Promote role
+        g.current_user.role = 'admin'
+        db.session.commit()
+        return jsonify({'message': 'Admin access verified.', 'role': g.current_user.role}), 200
+    
+    # No authentication - check credentials directly
+    from models import User
+    admin_user = User.query.filter_by(email=email).first()
+    if not admin_user or not admin_user.check_password(password):
+        return jsonify({'error': 'Invalid admin credentials.'}), 401
+    
     if email != 'admin@gmail.com':
         return jsonify({'error': 'Unauthorized email for admin access.'}), 403
 
-    # 2. Check Database Password (Stored in local User table)
-    from models import User
-    admin_db_user = User.query.filter_by(email='admin@gmail.com').first()
-    if not admin_db_user or not admin_db_user.check_password(password):
-        security_logger.warning(f"Failed admin password attempt for {email}")
-        return jsonify({'error': 'Invalid admin password.'}), 401
-    
-    # 3. Check Setup Key (.env)
-    if provided_key != ADMIN_SETUP_KEY:
-        security_logger.warning(f"Failed setup key attempt for {email}")
-        return jsonify({'error': 'Invalid setup key'}), 403
-    
-    # 4. Ensure the current Clerk session actually belongs to admin@gmail.com
-    if g.current_user.email != 'admin@gmail.com':
-        return jsonify({'error': 'Clerk account must match admin@gmail.com'}), 403
-
-    # 5. Success: Promote the user role
-    g.current_user.role = 'admin'
+    # Promote role
+    admin_user.role = 'admin'
     db.session.commit()
-    
-    security_logger.info(f"Admin access granted to {g.current_user.email}")
-    return jsonify({'message': 'Admin access verified.', 'role': g.current_user.role}), 200
+    return jsonify({'message': 'Admin access granted.', 'role': admin_user.role}), 200
+
+
+@app.route('/admin_login.html')
+def serve_admin_login():
+    """Serve the admin login HTML page"""
+    return send_from_directory('.', 'admin_login.html')
 
 
 if __name__ == '__main__':

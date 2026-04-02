@@ -56,6 +56,9 @@ const Sidebar = () => {
     { name: 'Geo Location', path: '/dashboard/geo-location', icon: (
       <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
     ) },
+    { name: 'Knowledge Graph', path: '/dashboard/graph', icon: (
+      <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="19" r="2"/><path d="M7 12h10M12 7v10M6.5 10.5l4-4M17.5 10.5l-4-4M6.5 13.5l4 4M17.5 13.5l-4 4"/></svg>
+    ) },
   ];
 
   return (

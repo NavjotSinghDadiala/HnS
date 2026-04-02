@@ -24,6 +24,7 @@ import BlogLanding from './hns_blog_page/app/BlogLanding';
 import BlogDetail from './hns_blog_page/app/BlogDetail';
 import FooterNavBar from './hns_home_page/components/layout/FooterNavBar';
 import ProjectList from './hns_admin_page/ProjectList';
+import AdminGraph from './hns_admin_page/AdminGraph';
 import PropertyListing from './hns_propertyListing_page/app/PropertyListing';
 import GeoLocation from './Builder.jsx/geoLocation';
 import BuilderInfoIndex from './BuilderInfo/pages/Index';
@@ -36,7 +37,20 @@ import BuildersListing from './hns_home_page/components/ui/BuildersListing';
 // Chatbot Context
 export const ChatbotContext = createContext();
 
+const getLocalUser = () => {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
 const ProtectedRoute = ({ children }) => {
+  const localUser = getLocalUser();
+  if (localUser) {
+    return children;
+  }
   return (
     <>
       <SignedIn>{children}</SignedIn>
@@ -48,6 +62,11 @@ const ProtectedRoute = ({ children }) => {
 };
 
 const AdminRoute = ({ children }) => {
+  const localUser = getLocalUser();
+  if (localUser?.role === 'admin') {
+    return children;
+  }
+
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const [adminStatus, setAdminStatus] = useState(null); // null=loading, true=admin, false=not
 
@@ -219,6 +238,14 @@ function App() {
                 <ProtectedRoute>
                   <GeoLocation />
                 </ProtectedRoute>
+              }
+            />
+            <Route
+              path="graph"
+              element={
+                <AdminRoute>
+                  <AdminGraph />
+                </AdminRoute>
               }
             />
           </Route>

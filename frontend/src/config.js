@@ -1,5 +1,6 @@
 // Centralized API configuration
-// Reads from Vite environment variable, falls back to localhost:5001
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
+// Reads from Vite environment variable, falls back to localhost:5000
+// Your Flask backend runs on http://127.0.0.1:5000 in this environment.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000';
 
 export default API_BASE_URL;

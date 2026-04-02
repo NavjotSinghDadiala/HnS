@@ -2,6 +2,17 @@ import API_BASE_URL from '../config';
 
 const API_URL = `${API_BASE_URL}/api`;
 
+export const fetchPropertyById = async (id) => {
+    try {
+        const response = await fetch(`${API_URL}/properties/${id}`);
+        if (!response.ok) throw new Error('Failed to fetch property');
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching property:', error);
+        throw error;
+    }
+};
+
 export const fetchBuilderProjectById = async (id) => {
     try {
         const response = await fetch(`${API_URL}/projects/${id}`);
@@ -82,17 +93,6 @@ export const fetchProperties = async (filters = {}) => {
         return await response.json();
     } catch (error) {
         console.error('Error fetching properties:', error);
-        throw error;
-    }
-};
-
-export const fetchPropertyById = async (id) => {
-    try {
-        const response = await fetch(`${API_URL}/properties/${id}`);
-        if (!response.ok) throw new Error('Failed to fetch property');
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching property:', error);
         throw error;
     }
 };

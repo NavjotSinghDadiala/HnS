@@ -14,42 +14,54 @@ const HeartIcon = ({ filled }) => (
   </svg>
 );
 
-const PropertyHero = () => {
+const PropertyHero = ({ propertyData: propPropertyData }) => {
   const { id } = useParams();
   const { addToCart, removeFromCart, isInCart } = useCart();
   const [propertyData, setPropertyData] = useState(null);
 
-  // Get property data from localStorage or use default
+  // Use prop data if available, otherwise fallback to localStorage or default
   useEffect(() => {
-    try {
-      const lastClicked = localStorage.getItem('lastClickedProperty');
-      if (lastClicked) {
-        const parsed = JSON.parse(lastClicked);
-        setPropertyData(parsed);
-      } else {
-        // Fallback to default property data
+    if (propPropertyData) {
+      // Map API data to component expected format
+      setPropertyData({
+        id: propPropertyData.id,
+        Property_Name: propPropertyData.Property_Name,
+        Location: propPropertyData.Location,
+        Existing_Configurations: propPropertyData.Existing_Configurations,
+        Price_Starting_From: propPropertyData.Price_Starting_From,
+        img: propertyHero // Use default image for now
+      });
+    } else {
+      try {
+        const lastClicked = localStorage.getItem('lastClickedProperty');
+        if (lastClicked) {
+          const parsed = JSON.parse(lastClicked);
+          setPropertyData(parsed);
+        } else {
+          // Fallback to default property data
+          setPropertyData({
+            id: id || 'default-property',
+            Property_Name: 'Neelkanth Palm Avenue',
+            Location: 'Neelkanth Palm Avenue, Ghansoli, Navi Mumbai',
+            Existing_Configurations: '2-4 BHK',
+            Price_Starting_From: '₹45 Lakh - ₹1.2 Cr',
+            img: propertyHero
+          });
+        }
+      } catch (error) {
+        console.error('Error loading property data:', error);
+        // Fallback to default
         setPropertyData({
           id: id || 'default-property',
-          name: 'Neelkanth Palm Avenue',
-          address: 'Neelkanth Palm Avenue, Ghansoli, Navi Mumbai',
-          features: '2-4 BHK',
-          price: '₹45 Lakh - ₹1.2 Cr',
+          Property_Name: 'Neelkanth Palm Avenue',
+          Location: 'Neelkanth Palm Avenue, Ghansoli, Navi Mumbai',
+          Existing_Configurations: '2-4 BHK',
+          Price_Starting_From: '₹45 Lakh - ₹1.2 Cr',
           img: propertyHero
         });
       }
-    } catch (error) {
-      console.error('Error loading property data:', error);
-      // Fallback to default
-      setPropertyData({
-        id: id || 'default-property',
-        name: 'Neelkanth Palm Avenue',
-        address: 'Neelkanth Palm Avenue, Ghansoli, Navi Mumbai',
-        features: '2-4 BHK',
-        price: '₹45 Lakh - ₹1.2 Cr',
-        img: propertyHero
-      });
     }
-  }, [id]);
+  }, [propPropertyData, id]);
 
   const scrollToMap = () => {
     const mapElement = document.getElementById('map-location');
@@ -68,16 +80,16 @@ const PropertyHero = () => {
       // Convert to property format for cart
       const propertyForCart = {
         id: propertyData.id,
-        name: propertyData.name,
-        address: propertyData.address,
-        location: propertyData.address,
-        price: propertyData.price,
+        name: propertyData.Property_Name,
+        address: propertyData.Location,
+        location: propertyData.Location,
+        price: propertyData.Price_Starting_From,
         img: propertyData.img || propertyHero,
         image: propertyData.img || propertyHero,
-        features: propertyData.features || '2-4 BHK',
-        bhk: propertyData.features || '2-4 BHK',
-        area: propertyData.area || '685.3 sq.ft. to 715.5 sq.ft.',
-        amenities: propertyData.amenities || [],
+        features: propertyData.Existing_Configurations || '2-4 BHK',
+        bhk: propertyData.Existing_Configurations || '2-4 BHK',
+        area: propertyData.Carpet_Area || '685.3 sq.ft. to 715.5 sq.ft.',
+        amenities: propertyData.Key_Highlights || [],
         status: 'Available'
       };
       addToCart(propertyForCart, 'featured');
@@ -93,7 +105,7 @@ const PropertyHero = () => {
         <div className="relative">
           <img 
             src={propertyData?.img || propertyHero} 
-            alt={propertyData?.name || "Neelkanth Palm Avenue"} 
+            alt={propertyData?.Property_Name || "Neelkanth Palm Avenue"} 
             className="w-full h-[300px] md:h-[400px] lg:h-[500px] object-cover rounded-lg" 
           />
           <button
@@ -129,17 +141,17 @@ const PropertyHero = () => {
           {/* Title and Address */}
           <div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-2 leading-tight">
-              {propertyData?.name || 'Neelkanth Palm Avenue'}
+              {propertyData?.Property_Name || 'Neelkanth Palm Avenue'}
             </h1>
             <div className="space-y-2">
               <p 
                 className="text-sm sm:text-base md:text-lg text-gray-600 cursor-pointer hover:text-blue-600 transition-colors" 
                 onClick={scrollToMap}
               >
-                📍 {propertyData?.address || 'Neelkanth Palm Avenue, Ghansoli, Navi Mumbai'}
+                📍 {propertyData?.Location || 'Neelkanth Palm Avenue, Ghansoli, Navi Mumbai'}
               </p>
               <p className="text-lg sm:text-xl md:text-2xl font-bold text-green-600">
-                {propertyData?.price || '₹45 Lakh - ₹1.2 Cr'}
+                {propertyData?.Price_Starting_From || '₹45 Lakh - ₹1.2 Cr'}
               </p>
             </div>
           </div>
