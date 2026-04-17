@@ -1,7 +1,7 @@
 """
 Seed 9 dummy blog rows into Blog table for testing.
 Run:
-  python backend/push2.py
+  python pushblog.py
 """
 import os
 import sqlite3
@@ -10,11 +10,27 @@ from datetime import datetime
 import random
 from datetime import timezone
 
-db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hns.db')
+def resolve_db_path():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    env_path = os.getenv("HNS_DB_PATH")
+
+    candidates = []
+    if env_path:
+        candidates.append(env_path)
+    candidates.extend([
+        os.path.join(base_dir, 'instance', 'hns.db'),
+        os.path.join(base_dir, 'hns.db'),
+    ])
+
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+
+    checked = "\n - ".join(candidates)
+    raise FileNotFoundError(f"Database not found. Checked:\n - {checked}")
 
 def ensure_connection():
-    if not os.path.exists(db_path):
-        raise FileNotFoundError(f"Database not found at: {db_path}")
+    db_path = resolve_db_path()
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn

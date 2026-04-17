@@ -114,9 +114,13 @@ export const createProperty = async (propertyData) => {
     }
 };
 
-export const fetchBlogs = async () => {
+export const fetchBlogs = async ({ live = false, signal } = {}) => {
     try {
-        const response = await fetch(`${API_URL}/blogs`);
+        const url = live ? `${API_URL}/blogs?t=${Date.now()}` : `${API_URL}/blogs`;
+        const response = await fetch(url, {
+            cache: live ? 'no-store' : 'default',
+            signal,
+        });
         if (!response.ok) throw new Error('Failed to fetch blogs');
         return await response.json();
     } catch (error) {

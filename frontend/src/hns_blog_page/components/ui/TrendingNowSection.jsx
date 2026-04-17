@@ -2,8 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import "../../blog_page_css/TrendingNowSection.css";
 
-const TrendingNowSection = () => {
-  const trendingItems = [
+const TrendingNowSection = ({ blogs = [] }) => {
+  const fallbackItems = [
     {
       id: 'trend1',
       featured_image: '/1484471303-realty-getty.jpg',
@@ -38,6 +38,20 @@ const TrendingNowSection = () => {
       slug: 'maharashtra-market-high',
     },
   ];
+
+  const trendingItems = blogs.length > 0
+    ? blogs.slice(0, 3).map((blog) => ({
+        id: blog.id,
+        featured_image: blog.featured_image ? `/uploads/${blog.featured_image}` : '/news.jpg',
+        featured_image_alt: blog.featured_image_alt || blog.title,
+        title: blog.title,
+        category: 'Trending',
+        badge: 'Hot',
+        author: blog.author || 'Unknown',
+        created_at: blog.created_at,
+        slug: blog.slug,
+      }))
+    : fallbackItems;
 
   return (
     <section className="trending-section">

@@ -1,0 +1,16 @@
+{
+    "name": "housenseek-workspace",
+    "private": true,
+    "scripts": {
+        "start": "npx concurrently -k -n frontend,backend \"npm run start:frontend\" \"npm run start:backend\"",
+        "dev": "npm run start",
+        "start:frontend": "npm --prefix frontend run dev",
+        "start:backend": "backend\\.venv\\Scripts\\python.exe backend\\app.py",
+        "build": "npm --prefix frontend run build",
+        "preview": "npm --prefix frontend run preview",
+        "lint": "npm --prefix frontend run lint"
+    },
+    "devDependencies": {
+        "concurrently": "^9.1.2"
+    }
+}

@@ -17,9 +17,25 @@ const BlogLanding = () => {
   const [category, setCategory] = useState('All');
 
   useEffect(() => {
-    fetchBlogs()
-      .then(setBlogs)
-      .catch(console.error);
+    let isMounted = true;
+
+    const loadBlogs = () => {
+      fetchBlogs({ live: true })
+        .then((data) => {
+          if (isMounted) {
+            setBlogs(Array.isArray(data) ? data : []);
+          }
+        })
+        .catch(console.error);
+    };
+
+    loadBlogs();
+    const intervalId = setInterval(loadBlogs, 30000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
   }, []);
 
   const filteredBlogs = category === "All"
@@ -40,7 +56,7 @@ const BlogLanding = () => {
     </div>
 
       <div className="max-w-6xl mx-auto px-4 pb-2">
-        <TrendingNow />
+        <TrendingNow blogs={filteredBlogs} />
         <FamousSection />
       </div>
 

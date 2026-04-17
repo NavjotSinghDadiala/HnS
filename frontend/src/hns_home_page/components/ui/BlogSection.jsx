@@ -1,7 +1,9 @@
-import React from 'react';
+import API_BASE_URL from '../../../config';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { fetchBlogs } from '../../../services/api';
 
-const featured = {
+const fallbackFeatured = {
   img: '/building.webp',
   title: 'Real Estate Market Update: Q2 Trends & Insights',
   subtitle: 'A snapshot of current property prices, demand, and buyer behavior.',
@@ -9,7 +11,7 @@ const featured = {
   button: 'View Article',
 };
 
-const articles = [
+const fallbackArticles = [
   {
     img: '/kalpa.jpg',
     title: 'Paperwork During Buying Property',
@@ -43,21 +45,74 @@ const articles = [
   },
 ];
 
-const BlogSection = () => {
+const BlogSection = ({ id }) => {
   const navigate = useNavigate();
+  const [blogs, setBlogs] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBlogs = async () => {
+      try {
+        const data = await fetchBlogs({ live: true });
+        if (isMounted) {
+          setBlogs(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('Failed to refresh blogs:', error);
+      }
+    };
+
+    loadBlogs();
+    const intervalId = setInterval(loadBlogs, 30000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  const featured = useMemo(() => {
+    if (!blogs.length) {
+      return fallbackFeatured;
+    }
+    const first = blogs[0];
+    return {
+      img: first.featured_image ? `${API_BASE_URL}/uploads/${first.featured_image}` : '/news.jpg',
+      title: first.title || 'Untitled Blog',
+      subtitle: first.intro_paragraph || 'Read the latest real estate insights.',
+      tagline: 'Fresh updates from our blog',
+      button: 'View Article',
+      slug: first.slug,
+    };
+  }, [blogs]);
+
+  const articles = useMemo(() => {
+    if (blogs.length <= 1) {
+      return fallbackArticles;
+    }
+    return blogs.slice(1, 7).map((blog) => ({
+      img: blog.featured_image ? `${API_BASE_URL}/uploads/${blog.featured_image}` : '/news.jpg',
+      title: blog.title || 'Untitled Blog',
+      subtitle: blog.intro_paragraph || 'Tap to read this article.',
+      slug: blog.slug,
+    }));
+  }, [blogs]);
 
   const handleFeaturedClick = () => {
-    // Navigate to article page - sample route for now
-    // navigate('/article/featured');
-    console.log('Featured article clicked - navigation commented out');
+    if (featured.slug) {
+      navigate(`/blog/${featured.slug}`);
+    }
   };
 
   const handleArticleClick = (article) => {
-    console.log(`Article clicked: ${article.title}`);
+    if (article.slug) {
+      navigate(`/blog/${article.slug}`);
+    }
   };
 
   return (
-    <section className="blog-section">
+    <section id={id} className="blog-section">
       <div className="section-header">
         <h2 className="section-title">
           Know Before You Buy
