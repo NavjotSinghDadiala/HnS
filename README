@@ -1,150 +1,269 @@
-# HouseNSeek
+# 🏠 HouseNSeek — AI-Powered Real Estate Intelligence Platform
 
-A full-stack real estate platform built with a React/Vite frontend and a Flask backend.
+HouseNSeek is a **full-stack AI-driven real estate platform** that transforms traditional property search into an **intelligent, personalized, and data-driven experience**.
 
-## Project Overview
+Unlike basic listing platforms, HouseNSeek integrates:
+- **Graph Neural Networks (GNN)**
+- **Recommendation Systems**
+- **User Behavior Modeling**
+- **Retrieval-Augmented Generation (RAG)**
+- **Automated Data Pipelines (Selenium Scraping)**
 
-This repository contains:
-- `frontend/`: React application using Vite, Clerk authentication, property listings, builder profiles, admin pages, blog pages, and dashboard views.
-- `backend/`: Flask API with SQLite/PostgreSQL support, Clerk-backed auth, property/builder/project/blog management, file uploads, admin statistics, favorites, geolocation, and a RAG/chat ecosystem.
-- `package.json`: root helper scripts to run the frontend and backend concurrently.
-- Data sources include property and listing data gathered via Selenium-based web scraping.
+This project is designed as a **Major AI/ML + Full Stack System**, combining scalable backend architecture with advanced machine learning concepts.
 
-## Features
+---
 
-- Property search, listing, and detail APIs
-- Location and nearest-node support
-- Builder and builder project management endpoints
-- Blog creation, listing, slug-based display, and summary generation
-- Favorites and guest/user session merging
-- Admin stats, graph data, security/audit endpoints
-- Clerk integration for authentication
-- File upload support for images and documents
-- Local SQLite database by default with optional PostgreSQL support
+# 🚀 Core AI Functionalities
 
-## Repository Structure
+## 🧠 1. Recommendation System
+- Personalized property suggestions based on:
+  - Budget
+  - Location
+  - Property type
+- Learns from:
+  - User clicks
+  - Favorites
+  - Search history
+- Continuously improves using **interaction-based feedback loop**
 
-- `/backend`
-  - `app.py`: main Flask application and API routes
-  - `models.py`: SQLAlchemy data models
-  - `auth.py`: Clerk auth decorators and admin authorization helpers
-  - `extensions.py`: shared Flask extension instances
-  - `requirements.txt`: Python dependencies
-  - `.env`: environment configuration (not recommended to commit secrets)
-  - `instance/`: generated SQLite database file location
-  - `uploads/`: upload storage directory
-  - `aiml_folder/`, `chatbot/`, `chroma_db/`: experimental AI/RAG components
-- `/frontend`
-  - `package.json`: frontend dependencies and Vite scripts
-  - `src/`: React application source files
-  - `public/`: static assets
-- `/uploads`: shared upload folder for repo-level storage
+---
 
-## Prerequisites
+## 🔗 2. Graph Neural Network (GNN)
+- Models relationships between:
+  - Users
+  - Properties
+  - Locations
+  - Builders
+- Enables:
+  - Smart locality recommendations
+  - Similar property detection
+  - Network-based insights
+- Captures **hidden relationships not possible with traditional filtering**
 
-- Node.js (recommended latest LTS)
-- npm
-- Python 3.11+ (or compatible Python 3.x)
-- Git Bash / WSL / PowerShell for shell commands on Windows
+---
 
-## Setup
+## 🧾 3. User Memory & Behavior Tracking
+- Tracks:
+  - Viewed listings
+  - Favorite properties
+  - Search queries
+- Builds **dynamic user profiles**
+- Enables:
+  - Session-aware recommendations
+  - Long-term personalization
+  - Context-based UI adaptation
 
-1. Install root and frontend dependencies:
+---
+
+## 🤖 4. RAG-Based AI Chat Assistant
+- Uses **Retrieval-Augmented Generation**
+- Integrated with:
+  - Vector Database (ChromaDB)
+- Capabilities:
+  - Answer property-related queries
+  - Provide locality insights
+  - Assist decision-making
+- Combines:
+  - Stored knowledge + real-time retrieval
+
+---
+
+## 🌐 5. Data Pipeline (Selenium Web Scraping)
+- Automated scraping of:
+  - Property listings
+  - Builder details
+  - Pricing data
+- Keeps system:
+  - Updated
+  - Scalable
+  - Data-rich
+- Supports CSV ingestion pipelines
+
+---
+
+## 📊 6. AI-Driven Insights
+- Property price trends
+- Location intelligence
+- User behavior analytics
+- Admin dashboards with graph-based metrics
+
+---
+
+# 🏗️ System Architecture
+
+Frontend (React + Vite + Clerk)
+↓
+Backend (Flask REST API)
+↓
+AI Layer:
+
+Recommendation Engine
+GNN Models
+User Behavior Tracking
+RAG Chat System
+↓
+Data Layer:
+SQLite / PostgreSQL
+ChromaDB (Vector Store)
+↓
+Data Pipeline:
+Selenium Scraping
+
+
+---
+
+# 🧩 Tech Stack
+
+## 💻 Frontend
+- React (Vite)
+- Clerk Authentication
+- Responsive UI
+- Dashboard & Admin Panels
+
+## ⚙️ Backend
+- Flask (REST API)
+- SQLAlchemy ORM
+- Flask-Migrate
+- CORS-enabled APIs
+
+## 🤖 AI / ML
+- Graph Neural Networks (GNN)
+- Recommendation Systems
+- User Behavior Modeling
+- RAG (Retrieval-Augmented Generation)
+- Vector Database (ChromaDB)
+
+## 📡 Data Engineering
+- Selenium Web Scraping
+- CSV Data Pipelines
+- Data Processing Scripts
+
+---
+
+# 📂 Project Structure
+/frontend
+├── src/
+├── public/
+
+/backend
+├── app.py # Main API
+├── models.py # Database models
+├── auth.py # Auth & admin logic
+├── extensions.py
+├── requirements.txt
+├── instance/ # SQLite DB
+├── uploads/ # File storage
+├── aiml_folder/ # ML models (GNN, recommender)
+├── chatbot/ # RAG system
+├── chroma_db/ # Vector DB
+
+/uploads # Shared uploads
+
+
+---
+
+# ⚡ Key Features
+
+## 🏠 Property System
+- Property listing & search APIs
+- Advanced filtering & sorting
+- Property detail pages
+
+## 📍 Location Intelligence
+- Nearest-node/location mapping
+- Smart locality recommendations
+
+## 🧑‍💼 Builder Module
+- Builder profiles
+- Builder project listings
+
+## ❤️ Favorites System
+- Guest + user session merging
+- Personalized favorite tracking
+
+## 📝 Blog System
+- Blog creation & management
+- Slug-based routing
+- AI-generated summaries
+
+## 🔐 Authentication & Security
+- Clerk Authentication
+- Admin authorization
+- Audit & security endpoints
+
+## 📊 Admin Dashboard
+- System analytics
+- Graph data
+- User activity tracking
+
+## 📁 File Uploads
+- Image/document uploads
+- Stored in backend/uploads
+
+---
+
+# 🛠️ Setup Guide
+
+## 1️⃣ Install Dependencies
 
 ```bash
-cd d:\HouseNseeKOrg2\HouseNseeKOrg2
 npm install
 npm install --prefix frontend
-```
 
-2. Prepare the backend Python environment:
-
-```powershell
+Backend Setup
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1   # PowerShell
-# or .\.venv\Scripts\activate.bat  # CMD
 pip install -r requirements.txt
-```
+3️⃣ Environment Variables
 
-> If `backend/.venv` already exists, activate it and install dependencies anyway to ensure packages are current.
+Create backend/.env:
 
-3. Configure environment variables:
+DATABASE_URL=sqlite:///instance/hns.db
+VECTOR_STORE_TYPE=chroma
+CLERK_SECRET_KEY=your_key
+GOOGLE_API_KEY=your_key
+ADMIN_SETUP_KEY=your_key
 
-Create or update `backend/.env` with values for:
 
-- `DATABASE_URL` (default: `sqlite:///instance/hns.db`)
-- `VECTOR_STORE_TYPE`
-- `CLERK_SECRET_KEY`
-- `GOOGLE_API_KEY`
-- `ADMIN_SETUP_KEY`
-
-The project includes a working `.env` example, but you should replace any secret values before deployment.
-
-## Running Locally
-
-### Start frontend and backend together
-
-From the repo root:
-
-```bash
+▶️ Running the Project
+Run Full Project
 npm run start
-```
-
-This runs:
-- `npm --prefix frontend run dev`
-- `backend\.venv\Scripts\python.exe backend\app.py`
-
-### Alternative frontend-only startup
-
-```bash
+Frontend Only
 npm --prefix frontend run dev
-```
-
-### Backend-only startup (inside backend venv)
-
-```bash
+Backend Only
 cd backend
 .\.venv\Scripts\Activate.ps1
 python app.py
-```
 
-## Build for Production
 
-```bash
-npm run build
-```
+🗄️ Database
+Default: SQLite (backend/instance/hns.db)
+Optional: PostgreSQL via DATABASE_URL
 
-This builds the React frontend using Vite.
 
-## Admin and Authentication
+🔐 Authentication
+Clerk-based authentication
+Default admin:
+Email: admin@gmail.com
+Password: admin
+📌 Unique Selling Points
+🔥 Combines AI + Full Stack + Data Engineering
+🧠 Implements real-world recommendation system
+🔗 Uses Graph Neural Networks for relationship modeling
+🤖 Integrates RAG-based AI assistant
+📊 Learns from user behavior dynamically
+🌐 Uses live scraped data for scalability
+🎯 Future Improvements
+Deep learning-based price prediction
+Real-time map integration
+Advanced GNN optimization
+Deployment on cloud (AWS/GCP)
+Mobile app version
 
-- Clerk authentication is used for frontend auth flows and backend token validation.
-- If no admin user exists, the backend creates one automatically on startup with:
-  - `email: admin@gmail.com`
-  - `password: admin`
-- The `ADMIN_SETUP_KEY` environment variable can be used to promote a user to admin through the `/api/auth/promote-admin` endpoint.
+📬 Contact
 
-## Database
+Explore:
 
-- Default backend database: `backend/instance/hns.db`
-- To use PostgreSQL, set `DATABASE_URL` in `backend/.env` to a valid PostgreSQL URI.
-- The backend uses Flask-Migrate and SQLAlchemy.
-
-## Notes
-
-- `backend/app.py` includes CORS support for local development origins on `localhost` and `127.0.0.1`.
-- Uploaded assets are saved under `backend/uploads`.
-- The repo contains CSV import utilities such as `backend/pushall.py` and blog import helpers in `backend/pushblog.py`.
-
-## Helpful Commands
-
-- `npm run dev` / `npm run start` - start frontend + backend
-- `npm run build` - build frontend
-- `npm run lint` - lint frontend code
-- `python -m pip install -r backend/requirements.txt` - install backend dependencies
-
-## Contact
-
-For updates or questions, inspect the backend APIs in `backend/app.py` and frontend routes in `frontend/src/`.
-
+Backend → backend/app.py
+Frontend → frontend/src/
