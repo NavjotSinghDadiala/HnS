@@ -1,6 +1,6 @@
-import API_BASE_URL from '../config';
 import React, { useEffect, useState } from 'react';
 import { FaEdit, FaTrash, FaEye, FaPlus } from 'react-icons/fa';
+import api from '../services/apiInstance';
 
 const ProjectList = () => {
   const [projects, setProjects] = useState([]);
@@ -9,14 +9,14 @@ const ProjectList = () => {
   const [success, setSuccess] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
-  const [form, setForm] = useState({ title: '', builder_name: '', location: '', description: '' });
+  const [form, setForm] = useState({ title: '', builder_name: '', builder_id: '', location: '', description: '' });
 
   const fetchProjects = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/projects`);
-      const data = await res.json();
+      const res = await api.get('/projects');
+      const data = res.data;
       setProjects(Array.isArray(data) ? data : []);
     } catch (err) {
       setError('Failed to fetch projects');
@@ -32,8 +32,7 @@ const ProjectList = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this project?')) return;
     try {
-      const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete project');
+      await api.delete(`/projects/${id}`);
       setSuccess('Project deleted successfully');
       fetchProjects();
     } catch (err) {
@@ -46,6 +45,7 @@ const ProjectList = () => {
     setForm({
       title: project.title,
       builder_name: project.builder_name,
+      builder_id: project.builder_id,
       location: project.location,
       description: project.description || '',
     });
@@ -58,7 +58,7 @@ const ProjectList = () => {
 
   const handleCreate = () => {
     setEditingProject(null);
-    setForm({ title: '', builder_name: '', location: '', description: '' });
+    setForm({ title: '', builder_name: '', builder_id: '', location: '', description: '' });
     setShowForm(true);
   };
 
@@ -70,14 +70,11 @@ const ProjectList = () => {
     e.preventDefault();
     setError(null);
     try {
-      const method = editingProject ? 'PATCH' : 'POST';
-      const url = editingProject ? `/api/builders/${editingProject.builder_id}/projects/${editingProject.id}` : `/api/builders/${form.builder_id}/projects/step1`;
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      if (!res.ok) throw new Error('Failed to save project');
+      if (editingProject) {
+        await api.patch(`/builders/${editingProject.builder_id}/projects/${editingProject.id}`, form);
+      } else {
+        await api.post(`/builders/${form.builder_id}/projects/step1`, form);
+      }
       setSuccess(editingProject ? 'Project updated successfully' : 'Project created successfully');
       setShowForm(false);
       fetchProjects();
@@ -102,6 +99,7 @@ const ProjectList = () => {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
             <input name="title" value={form.title} onChange={handleFormChange} placeholder="Project Name" required style={{ flex: 1, minWidth: 120 }} />
             <input name="builder_name" value={form.builder_name} onChange={handleFormChange} placeholder="Builder Name" required style={{ flex: 1, minWidth: 120 }} />
+            <input name="builder_id" value={form.builder_id} onChange={handleFormChange} placeholder="Builder RERA ID" required style={{ flex: 1, minWidth: 120 }} />
             <input name="location" value={form.location} onChange={handleFormChange} placeholder="Location" required style={{ flex: 1, minWidth: 120 }} />
             <input name="description" value={form.description} onChange={handleFormChange} placeholder="Description" style={{ flex: 2, minWidth: 180 }} />
           </div>

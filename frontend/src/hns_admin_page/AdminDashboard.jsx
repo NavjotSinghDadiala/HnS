@@ -1,7 +1,7 @@
-import API_BASE_URL from '../config';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaEdit, FaTrash, FaEye, FaUsers, FaHome, FaEnvelope, FaStar, FaUser } from 'react-icons/fa';
+import api from '../services/apiInstance';
 
 const initialForm = {
     builder_name: '',
@@ -38,11 +38,19 @@ const AdminDashboard = () => {
     const navigate = useNavigate();
 
     useEffect(() => {
-        // Check if user is admin
-        const user = JSON.parse(localStorage.getItem('user'));
-        if (!user || user.role !== 'admin') {
-            navigate('/');
-            return;
+        // Keep local-auth users gated here; Clerk users are already verified by AdminRoute.
+        const rawUser = localStorage.getItem('user');
+        if (rawUser) {
+            try {
+                const user = JSON.parse(rawUser);
+                if (user?.role !== 'admin') {
+                    navigate('/');
+                    return;
+                }
+            } catch {
+                navigate('/');
+                return;
+            }
         }
 
         // Fetch dashboard stats and users
@@ -73,17 +81,8 @@ const AdminDashboard = () => {
 
     const fetchUsers = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to fetch users');
-            }
-            const data = await response.json();
+            const response = await api.get('/users');
+            const data = response.data;
             setUsers(data);
         } catch (error) {
             console.error('Error fetching users:', error);
@@ -106,15 +105,7 @@ const AdminDashboard = () => {
     const handleUserDelete = async (userId) => {
         if (window.confirm('Are you sure you want to delete this user?')) {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
-                });
-                if (!response.ok) {
-                    throw new Error('Failed to delete user');
-                }
+                await api.delete(`/users/${userId}`);
                 fetchUsers();
                 setSuccess('User deleted successfully');
             } catch (error) {
@@ -125,17 +116,7 @@ const AdminDashboard = () => {
 
     const handleUserUpdate = async (updatedUser) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${updatedUser.id}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(updatedUser),
-            });
-            if (!response.ok) {
-                throw new Error('Failed to update user');
-            }
+            await api.put(`/users/${updatedUser.id}`, updatedUser);
             fetchUsers();
             setShowModal(false);
             setSuccess('User updated successfully');
@@ -146,13 +127,8 @@ const AdminDashboard = () => {
 
     const fetchDashboardStats = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/admin/stats`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (!response.ok) throw new Error('Failed to fetch stats');
-            const data = await response.json();
+            const response = await api.get('/admin/stats');
+            const data = response.data;
             setStats(data);
             setLoading(false);
         } catch (err) {
@@ -163,9 +139,8 @@ const AdminDashboard = () => {
 
     const fetchProjects = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/projects`);
-            if (!response.ok) throw new Error('Failed to fetch projects');
-            const data = await response.json();
+            const response = await api.get('/projects');
+            const data = response.data;
             setProjects(data);
         } catch (error) {
             console.error('Error fetching projects:', error);
@@ -210,17 +185,12 @@ const AdminDashboard = () => {
         e.preventDefault();
         setError(null);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/builders/' + form.builder_id + '/projects/step1`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    builder: form.builder_name,
-                    title: form.title,
-                    description: form.description,
-                    location: form.location
-                })
+            await api.post(`/builders/${form.builder_id}/projects/step1`, {
+                builder_name: form.builder_name,
+                title: form.title,
+                description: form.description,
+                location: form.location,
             });
-            if (!res.ok) throw new Error('Failed to add project');
             setForm(initialForm);
             fetchProjects();
         } catch (err) {
@@ -247,21 +217,16 @@ const AdminDashboard = () => {
         e.preventDefault();
         setError(null);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/builders/${form.builder_id}/projects/${editingId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    builder_name: form.builder_name,
-                    title: form.title,
-                    description: form.description,
-                    location: form.location,
-                    total_units: form.total_units,
-                    price_range: form.price_range,
-                    completion_date: form.completion_date,
-                    status: form.status
-                })
+            await api.patch(`/builders/${form.builder_id}/projects/${editingId}`, {
+                builder_name: form.builder_name,
+                title: form.title,
+                description: form.description,
+                location: form.location,
+                total_units: form.total_units,
+                price_range: form.price_range,
+                completion_date: form.completion_date,
+                status: form.status,
             });
-            if (!res.ok) throw new Error('Failed to update project');
             setEditingId(null);
             setForm(initialForm);
             fetchProjects();
@@ -273,8 +238,7 @@ const AdminDashboard = () => {
     const handleDeleteProject = async id => {
         setError(null);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/projects/${id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error('Failed to delete project');
+            await api.delete(`/projects/${id}`);
             setShowDeleteId(null);
             fetchProjects();
         } catch (err) {
@@ -413,21 +377,19 @@ const AdminDashboard = () => {
                     <nav className="flex -mb-px">
                         <button
                             onClick={() => setActiveTab('builders')}
-                            className={`px-6 py-4 text-sm font-medium ${
-                                activeTab === 'builders'
+                            className={`px-6 py-4 text-sm font-medium ${activeTab === 'builders'
                                     ? 'border-b-2 border-blue-500 text-blue-600'
                                     : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                                }`}
                         >
                             Builders Management
                         </button>
                         <button
                             onClick={() => setActiveTab('users')}
-                            className={`px-6 py-4 text-sm font-medium ${
-                                activeTab === 'users'
+                            className={`px-6 py-4 text-sm font-medium ${activeTab === 'users'
                                     ? 'border-b-2 border-blue-500 text-blue-600'
                                     : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                                }`}
                         >
                             Users Management
                         </button>
@@ -511,11 +473,10 @@ const AdminDashboard = () => {
                                                 <div className="text-sm text-gray-900">{user.role}</div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                                    user.is_active 
-                                                        ? 'bg-green-100 text-green-800' 
+                                                <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${user.is_active
+                                                        ? 'bg-green-100 text-green-800'
                                                         : 'bg-red-100 text-red-800'
-                                                }`}>
+                                                    }`}>
                                                     {user.is_active ? 'Active' : 'Inactive'}
                                                 </span>
                                             </td>
@@ -602,7 +563,7 @@ const AdminDashboard = () => {
                     <div className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-semibold text-gray-900">
-                                {activeTab === 'builders' 
+                                {activeTab === 'builders'
                                     ? (modalType === 'view' ? 'Builder Details' : 'Edit Builder')
                                     : (modalType === 'view' ? 'User Details' : 'Edit User')
                                 }
@@ -677,11 +638,10 @@ const AdminDashboard = () => {
                                     <div className="bg-gray-50 rounded-lg p-4">
                                         <h4 className="text-lg font-medium text-gray-900 mb-4">Status</h4>
                                         <div className="flex items-center">
-                                            <span className={`px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full ${
-                                                selectedUser.verified 
-                                                    ? 'bg-green-100 text-green-800' 
+                                            <span className={`px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full ${selectedUser.verified
+                                                    ? 'bg-green-100 text-green-800'
                                                     : 'bg-yellow-100 text-yellow-800'
-                                            }`}>
+                                                }`}>
                                                 {selectedUser.verified ? 'Verified' : 'Pending'}
                                             </span>
                                             <button
@@ -709,7 +669,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="text"
                                                         value={selectedUser.company_name || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, company_name: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, company_name: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         required
                                                     />
@@ -719,7 +679,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="text"
                                                         value={selectedUser.brand_name || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, brand_name: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, brand_name: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </div>
@@ -728,7 +688,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="text"
                                                         value={selectedUser.location || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, location: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, location: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         required
                                                     />
@@ -738,7 +698,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="number"
                                                         value={selectedUser.established_year || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, established_year: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, established_year: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </div>
@@ -754,7 +714,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="email"
                                                         value={selectedUser.contact_email || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, contact_email: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, contact_email: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         required
                                                     />
@@ -764,7 +724,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="text"
                                                         value={selectedUser.contact_number || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, contact_number: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, contact_number: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </div>
@@ -773,7 +733,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="url"
                                                         value={selectedUser.website_url || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, website_url: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, website_url: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </div>
@@ -785,7 +745,7 @@ const AdminDashboard = () => {
                                             <h4 className="text-lg font-medium text-gray-900 mb-4">Description</h4>
                                             <textarea
                                                 value={selectedUser.short_description || ''}
-                                                onChange={(e) => setSelectedUser({...selectedUser, short_description: e.target.value})}
+                                                onChange={(e) => setSelectedUser({ ...selectedUser, short_description: e.target.value })}
                                                 rows={3}
                                                 className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                             />
@@ -799,7 +759,7 @@ const AdminDashboard = () => {
                                                     type="checkbox"
                                                     id="verified"
                                                     checked={selectedUser.verified || false}
-                                                    onChange={(e) => setSelectedUser({...selectedUser, verified: e.target.checked})}
+                                                    onChange={(e) => setSelectedUser({ ...selectedUser, verified: e.target.checked })}
                                                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                                 />
                                                 <label htmlFor="verified" className="ml-2 block text-sm text-gray-900">
@@ -851,11 +811,10 @@ const AdminDashboard = () => {
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700">Status</label>
                                                 <p className="mt-1 text-gray-900 font-medium">
-                                                    <span className={`px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full ${
-                                                        selectedUser.is_active 
-                                                            ? 'bg-green-100 text-green-800' 
+                                                    <span className={`px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full ${selectedUser.is_active
+                                                            ? 'bg-green-100 text-green-800'
                                                             : 'bg-red-100 text-red-800'
-                                                    }`}>
+                                                        }`}>
                                                         {selectedUser.is_active ? 'Active' : 'Inactive'}
                                                     </span>
                                                 </p>
@@ -894,7 +853,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="text"
                                                         value={selectedUser.name || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, name: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, name: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         required
                                                     />
@@ -904,7 +863,7 @@ const AdminDashboard = () => {
                                                     <input
                                                         type="email"
                                                         value={selectedUser.email || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, email: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         required
                                                     />
@@ -913,7 +872,7 @@ const AdminDashboard = () => {
                                                     <label className="block text-sm font-medium text-gray-700">Role</label>
                                                     <select
                                                         value={selectedUser.role || ''}
-                                                        onChange={(e) => setSelectedUser({...selectedUser, role: e.target.value})}
+                                                        onChange={(e) => setSelectedUser({ ...selectedUser, role: e.target.value })}
                                                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         required
                                                     >
@@ -930,7 +889,7 @@ const AdminDashboard = () => {
                                                             <input
                                                                 type="checkbox"
                                                                 checked={selectedUser.is_active || false}
-                                                                onChange={(e) => setSelectedUser({...selectedUser, is_active: e.target.checked})}
+                                                                onChange={(e) => setSelectedUser({ ...selectedUser, is_active: e.target.checked })}
                                                                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                                             />
                                                             <span className="ml-2 text-sm text-gray-900">Active User</span>

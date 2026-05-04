@@ -1,6 +1,10 @@
 import React from 'react';
 
 const BuilderHero = ({ builder }) => {
+    const builderTitle = builder?.company_name || 'Your Builder';
+    const builderLocation = [builder?.city, builder?.state].filter(Boolean).join(', ');
+    const subtitle = builder?.short_description || 'Verified credentials and detailed portfolio analysis for a smarter home-buying journey.';
+
     return (
         <div style={{
             width: '100%',
@@ -67,13 +71,13 @@ const BuilderHero = ({ builder }) => {
                         textShadow: '0 2px 20px rgba(255, 255, 255, 0.2)',
                         fontFamily: 'system-ui, -apple-system, sans-serif',
                     }}>
-                        Know Your Builder <span style={{
+                        {builderTitle} <span style={{
                             background: 'linear-gradient(135deg, #F1D97A 0%, #f5e6a8 100%)',
                             WebkitBackgroundClip: 'text',
                             WebkitTextFillColor: 'transparent',
                             backgroundClip: 'text',
                             filter: 'drop-shadow(0 0 20px rgba(241, 217, 122, 0.4))',
-                        }}>Before You Buy</span>
+                        }}>{builderLocation ? `in ${builderLocation}` : 'Builder Profile'}</span>
                     </h1>
 
                     {/* Subheading */}
@@ -87,7 +91,7 @@ const BuilderHero = ({ builder }) => {
                         letterSpacing: '0.02em',
                         fontFamily: 'system-ui, -apple-system, sans-serif',
                     }}>
-                        Verified credentials and detailed portfolio analysis for a smarter home-buying journey.
+                        {subtitle}
                     </p>
                 </div>
             </div>

@@ -1,1 +1,150 @@
-Readme
+# HouseNSeek
+
+A full-stack real estate platform built with a React/Vite frontend and a Flask backend.
+
+## Project Overview
+
+This repository contains:
+- `frontend/`: React application using Vite, Clerk authentication, property listings, builder profiles, admin pages, blog pages, and dashboard views.
+- `backend/`: Flask API with SQLite/PostgreSQL support, Clerk-backed auth, property/builder/project/blog management, file uploads, admin statistics, favorites, geolocation, and a RAG/chat ecosystem.
+- `package.json`: root helper scripts to run the frontend and backend concurrently.
+- Data sources include property and listing data gathered via Selenium-based web scraping.
+
+## Features
+
+- Property search, listing, and detail APIs
+- Location and nearest-node support
+- Builder and builder project management endpoints
+- Blog creation, listing, slug-based display, and summary generation
+- Favorites and guest/user session merging
+- Admin stats, graph data, security/audit endpoints
+- Clerk integration for authentication
+- File upload support for images and documents
+- Local SQLite database by default with optional PostgreSQL support
+
+## Repository Structure
+
+- `/backend`
+  - `app.py`: main Flask application and API routes
+  - `models.py`: SQLAlchemy data models
+  - `auth.py`: Clerk auth decorators and admin authorization helpers
+  - `extensions.py`: shared Flask extension instances
+  - `requirements.txt`: Python dependencies
+  - `.env`: environment configuration (not recommended to commit secrets)
+  - `instance/`: generated SQLite database file location
+  - `uploads/`: upload storage directory
+  - `aiml_folder/`, `chatbot/`, `chroma_db/`: experimental AI/RAG components
+- `/frontend`
+  - `package.json`: frontend dependencies and Vite scripts
+  - `src/`: React application source files
+  - `public/`: static assets
+- `/uploads`: shared upload folder for repo-level storage
+
+## Prerequisites
+
+- Node.js (recommended latest LTS)
+- npm
+- Python 3.11+ (or compatible Python 3.x)
+- Git Bash / WSL / PowerShell for shell commands on Windows
+
+## Setup
+
+1. Install root and frontend dependencies:
+
+```bash
+cd d:\HouseNseeKOrg2\HouseNseeKOrg2
+npm install
+npm install --prefix frontend
+```
+
+2. Prepare the backend Python environment:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1   # PowerShell
+# or .\.venv\Scripts\activate.bat  # CMD
+pip install -r requirements.txt
+```
+
+> If `backend/.venv` already exists, activate it and install dependencies anyway to ensure packages are current.
+
+3. Configure environment variables:
+
+Create or update `backend/.env` with values for:
+
+- `DATABASE_URL` (default: `sqlite:///instance/hns.db`)
+- `VECTOR_STORE_TYPE`
+- `CLERK_SECRET_KEY`
+- `GOOGLE_API_KEY`
+- `ADMIN_SETUP_KEY`
+
+The project includes a working `.env` example, but you should replace any secret values before deployment.
+
+## Running Locally
+
+### Start frontend and backend together
+
+From the repo root:
+
+```bash
+npm run start
+```
+
+This runs:
+- `npm --prefix frontend run dev`
+- `backend\.venv\Scripts\python.exe backend\app.py`
+
+### Alternative frontend-only startup
+
+```bash
+npm --prefix frontend run dev
+```
+
+### Backend-only startup (inside backend venv)
+
+```bash
+cd backend
+.\.venv\Scripts\Activate.ps1
+python app.py
+```
+
+## Build for Production
+
+```bash
+npm run build
+```
+
+This builds the React frontend using Vite.
+
+## Admin and Authentication
+
+- Clerk authentication is used for frontend auth flows and backend token validation.
+- If no admin user exists, the backend creates one automatically on startup with:
+  - `email: admin@gmail.com`
+  - `password: admin`
+- The `ADMIN_SETUP_KEY` environment variable can be used to promote a user to admin through the `/api/auth/promote-admin` endpoint.
+
+## Database
+
+- Default backend database: `backend/instance/hns.db`
+- To use PostgreSQL, set `DATABASE_URL` in `backend/.env` to a valid PostgreSQL URI.
+- The backend uses Flask-Migrate and SQLAlchemy.
+
+## Notes
+
+- `backend/app.py` includes CORS support for local development origins on `localhost` and `127.0.0.1`.
+- Uploaded assets are saved under `backend/uploads`.
+- The repo contains CSV import utilities such as `backend/pushall.py` and blog import helpers in `backend/pushblog.py`.
+
+## Helpful Commands
+
+- `npm run dev` / `npm run start` - start frontend + backend
+- `npm run build` - build frontend
+- `npm run lint` - lint frontend code
+- `python -m pip install -r backend/requirements.txt` - install backend dependencies
+
+## Contact
+
+For updates or questions, inspect the backend APIs in `backend/app.py` and frontend routes in `frontend/src/`.
+

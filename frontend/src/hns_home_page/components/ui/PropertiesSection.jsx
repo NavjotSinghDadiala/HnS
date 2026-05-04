@@ -59,17 +59,19 @@ const PropertiesSection = ({ searchFilters }) => {
 
     const getProperties = async () => {
       try {
-        const data = await fetchProperties({ location: searchFilters.location });
-        const mapped = Array.isArray(data) ? data.map(p => ({
-          id: p._id || p.id || '',
-          name: p.Property_Name || '',
-          address: p.Address || p.Location || '',
-          price: p.Price_Starting_From || p.Pricing || '',
-          confidence: p.confidence || '',
-          img: p.image || '/Presidential Towers.jpg.png',
-          features: p.Features || '',
-          Existing_Configurations: p.Existing_Configurations || [],
-        })) : [];
+        const data = await fetchProperties(searchFilters || {});
+        const mapped = Array.isArray(data)
+          ? data.map((p) => ({
+            id: p._id || p.id || '',
+            name: p.Property_Name || '',
+            address: p.Address || p.Location || '',
+            price: p.Price_Starting_From || p.Pricing || '',
+            confidence: p.confidence || '',
+            img: p.image || '/Presidential Towers.jpg.png',
+            features: p.Features || '',
+            Existing_Configurations: p.Existing_Configurations || [],
+          }))
+          : [];
         setProperties(mapped);
         setError(null);
       } catch (err) {
@@ -79,10 +81,18 @@ const PropertiesSection = ({ searchFilters }) => {
         setLoading(false);
       }
     };
+
     getProperties();
 
     return () => window.removeEventListener('resize', handleResize);
-  }, [searchFilters.location]);
+  }, [
+    searchFilters.location,
+    searchFilters.priceRange,
+    JSON.stringify(searchFilters.bhkTypes || []),
+    JSON.stringify(searchFilters.amenities || []),
+    JSON.stringify(searchFilters.propertyStatus || []),
+    JSON.stringify(searchFilters.societyType || [])
+  ]);
 
   const handleHeartClick = (e, property) => {
     e.stopPropagation();

@@ -1,6 +1,23 @@
 import React from 'react';
 
-const WhoWeAreSection = () => {
+const toArray = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const WhoWeAreSection = ({ builder }) => {
+  const companyName = builder?.company_name || 'Our team';
+  const shortDesc = builder?.short_description || 'Trusted real-estate delivery with transparent processes and quality construction.';
+  const awards = toArray(builder?.awards);
+  const completed = builder?.completed_projects ?? 0;
+  const ongoing = builder?.ongoing_projects ?? 0;
+
   return (
     <div className="bg-gray-50 rounded-none p-4 pb-6 md:rounded-2xl md:p-6 md:pb-8">
       <div className="mb-4 flex items-center md:mb-5">
@@ -10,10 +27,10 @@ const WhoWeAreSection = () => {
 
       <div className="flex flex-col gap-6 md:flex-row md:gap-8">
         <div className="order-2 w-full md:order-1 md:w-3/5 md:pr-8">
-          <h2 className="builder-section-heading mb-3 md:mb-4">Crafting Landmarks, Building Trust.</h2>
+          <h2 className="builder-section-heading mb-3 md:mb-4">{companyName}: Crafting Landmarks, Building Trust.</h2>
 
           <p className="mb-6 text-sm text-gray-600 md:mb-8 md:text-base">
-            "With decades of experience in shaping skylines, we bring unmatched quality, transparency, and innovation to every project."
+            {shortDesc}
           </p>
 
           <div className="space-y-4 md:space-y-6">
@@ -25,8 +42,8 @@ const WhoWeAreSection = () => {
                 </svg>
               </div>
               <div>
-                <h3 className="text-m font-serif text-gray-800 md:text-base">Past Project Portfolio</h3>
-                <p className="text-xs text-gray-500 md:text-sm">Browse our completed projects and see customer testimonials of hundreds of families that chose us.</p>
+                <h3 className="text-m font-serif text-gray-800 md:text-base">Project Portfolio</h3>
+                <p className="text-xs text-gray-500 md:text-sm">Completed: {completed} projects | Ongoing: {ongoing} projects.</p>
               </div>
             </div>
 
@@ -39,7 +56,10 @@ const WhoWeAreSection = () => {
               </div>
               <div>
                 <h3 className="text-m font-serif text-gray-800 md:text-base">Certified & Approved</h3>
-                <p className="text-xs text-gray-500 md:text-sm">Every project is backed by RERA registration, occupancy certificates, and government clearances for complete peace of mind.</p>
+                <p className="text-xs text-gray-500 md:text-sm">
+                  {builder?.rera_registered ? `RERA registered (${builder?.rera_id || 'ID available'})` : 'Registration details available on request'}
+                  {awards.length > 0 ? ` | Awards: ${awards.slice(0, 2).join(', ')}` : ''}
+                </p>
               </div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import API_BASE_URL from '../config';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
+import api from '../services/apiInstance';
 
 const AdminBlog = () => {
   const location = useLocation();
@@ -39,8 +39,6 @@ const AdminBlog = () => {
     image3: null,
     featuredImage: null
   });
-
-  const FLASK_API_URL = `${API_BASE_URL}/api`;
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -84,7 +82,7 @@ const AdminBlog = () => {
     for (let i = 1; i <= 3; i++) {
       const subheading = formData[`subheading${i}`];
       const content = formData[`content${i}`];
-      
+
       if (subheading && content) {
         htmlContent += `<h2>${subheading}</h2>`;
         htmlContent += `<p>${content}</p>`;
@@ -161,17 +159,18 @@ const AdminBlog = () => {
       formDataToSend.append('introParagraph', formData.introParagraph);
       formDataToSend.append('subheading1', formData.subheading1);
       formDataToSend.append('content1', formData.content1);
-      formDataToSend.append('image1', formData.image1 || '');
+      // Only append image files if they're actual File objects
+      if (formData.image1 instanceof File) formDataToSend.append('image1', formData.image1);
       formDataToSend.append('altText1', formData.altText1);
       formDataToSend.append('subheading2', formData.subheading2);
       formDataToSend.append('content2', formData.content2);
-      formDataToSend.append('image2', formData.image2 || '');
+      if (formData.image2 instanceof File) formDataToSend.append('image2', formData.image2);
       formDataToSend.append('altText2', formData.altText2);
       formDataToSend.append('subheading3', formData.subheading3);
       formDataToSend.append('content3', formData.content3);
-      formDataToSend.append('image3', formData.image3 || '');
+      if (formData.image3 instanceof File) formDataToSend.append('image3', formData.image3);
       formDataToSend.append('altText3', formData.altText3);
-      formDataToSend.append('featuredImage', formData.featuredImage || '');
+      if (formData.featuredImage instanceof File) formDataToSend.append('featuredImage', formData.featuredImage);
       formDataToSend.append('featuredImageAlt', formData.featuredImageAlt);
       formDataToSend.append('interlinks', JSON.stringify(formData.interlinks));
       formDataToSend.append('externalLinks', JSON.stringify(formData.externalLinks));
@@ -182,14 +181,10 @@ const AdminBlog = () => {
       let response;
       if (editingBlog) {
         // Edit mode: PUT request
-        response = await axios.put(`${FLASK_API_URL}/blogs/${editingBlog.id}`, formDataToSend, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
+        response = await api.put(`/blogs/${editingBlog.id}`, formDataToSend);
       } else {
         // Create mode: POST request
-        response = await axios.post(`${FLASK_API_URL}/blogs`, formDataToSend, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
+        response = await api.post(`/blogs`, formDataToSend);
       }
 
       if (response.data.success) {
@@ -269,11 +264,10 @@ const AdminBlog = () => {
 
         {/* Message Display */}
         {message.text && (
-          <div className={`mb-8 p-6 rounded-xl shadow-lg ${
-            message.type === 'success' 
-              ? 'bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 text-green-800' 
-              : 'bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 text-red-800'
-          }`}>
+          <div className={`mb-8 p-6 rounded-xl shadow-lg ${message.type === 'success'
+            ? 'bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 text-green-800'
+            : 'bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 text-red-800'
+            }`}>
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 {message.type === 'success' ? (
@@ -302,7 +296,7 @@ const AdminBlog = () => {
               </div>
               <h2 className="text-2xl font-bold text-gray-900">Basic Information</h2>
             </div>
-            
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div>
@@ -363,17 +357,17 @@ const AdminBlog = () => {
                     className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 transition-all duration-200 cursor-pointer"
                     required
                   />
-                  
+
                   {imagePreview.featuredImage && (
                     <div className="mt-3">
-                      <img 
-                        src={imagePreview.featuredImage} 
-                        alt="Featured Image Preview" 
+                      <img
+                        src={imagePreview.featuredImage}
+                        alt="Featured Image Preview"
                         className="w-32 h-32 object-cover rounded-lg border"
                       />
                     </div>
                   )}
-                  
+
                   <input
                     type="text"
                     name="featuredImageAlt"
@@ -395,7 +389,7 @@ const AdminBlog = () => {
               </div>
               <h2 className="text-2xl font-bold text-gray-900">Content Sections</h2>
             </div>
-            
+
             {/* Section 1 */}
             <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 space-y-6">
               <div className="flex items-center space-x-3 mb-4">
@@ -405,7 +399,7 @@ const AdminBlog = () => {
                 <h3 className="text-xl font-bold text-gray-900">Section 1</h3>
                 <span className="text-red-500 text-sm">*</span>
               </div>
-              
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
@@ -450,17 +444,17 @@ const AdminBlog = () => {
                       onChange={(e) => handleImageChange(e, 'image1')}
                       className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 transition-all duration-200 cursor-pointer"
                     />
-                    
+
                     {imagePreview.image1 && (
                       <div className="mt-3">
-                        <img 
-                          src={imagePreview.image1} 
-                          alt="Image 1 Preview" 
+                        <img
+                          src={imagePreview.image1}
+                          alt="Image 1 Preview"
                           className="w-32 h-32 object-cover rounded-lg border"
                         />
                       </div>
                     )}
-                    
+
                     <input
                       type="text"
                       name="altText1"
@@ -483,7 +477,7 @@ const AdminBlog = () => {
                 <h3 className="text-xl font-bold text-gray-900">Section 2</h3>
                 <span className="text-red-500 text-sm">*</span>
               </div>
-              
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
@@ -528,17 +522,17 @@ const AdminBlog = () => {
                       onChange={(e) => handleImageChange(e, 'image2')}
                       className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 transition-all duration-200 cursor-pointer"
                     />
-                    
+
                     {imagePreview.image2 && (
                       <div className="mt-3">
-                        <img 
-                          src={imagePreview.image2} 
-                          alt="Image 2 Preview" 
+                        <img
+                          src={imagePreview.image2}
+                          alt="Image 2 Preview"
                           className="w-32 h-32 object-cover rounded-lg border"
                         />
                       </div>
                     )}
-                    
+
                     <input
                       type="text"
                       name="altText2"
@@ -560,7 +554,7 @@ const AdminBlog = () => {
                 </div>
                 <h3 className="text-xl font-bold text-gray-900">Section 3 (Optional)</h3>
               </div>
-              
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
@@ -603,17 +597,17 @@ const AdminBlog = () => {
                       onChange={(e) => handleImageChange(e, 'image3')}
                       className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 transition-all duration-200 cursor-pointer"
                     />
-                    
+
                     {imagePreview.image3 && (
                       <div className="mt-3">
-                        <img 
-                          src={imagePreview.image3} 
-                          alt="Image 3 Preview" 
+                        <img
+                          src={imagePreview.image3}
+                          alt="Image 3 Preview"
                           className="w-32 h-32 object-cover rounded-lg border"
                         />
                       </div>
                     )}
-                    
+
                     <input
                       type="text"
                       name="altText3"
@@ -636,12 +630,12 @@ const AdminBlog = () => {
               </div>
               <h2 className="text-2xl font-bold text-gray-900">Links & SEO</h2>
             </div>
-            
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Links */}
               <div className="space-y-6">
                 <h3 className="text-lg font-semibold text-gray-900">Links</h3>
-                
+
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-3">
                     Interlinks (Related Articles)
@@ -682,7 +676,7 @@ const AdminBlog = () => {
               {/* SEO */}
               <div className="space-y-6">
                 <h3 className="text-lg font-semibold text-gray-900">SEO</h3>
-                
+
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Meta Description

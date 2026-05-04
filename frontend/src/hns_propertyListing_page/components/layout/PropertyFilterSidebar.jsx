@@ -2,6 +2,7 @@ import { useState, forwardRef, useImperativeHandle, useEffect } from "react";
 import { X, Filter } from "lucide-react";
 import "../../hns_propertylisting_css/PropertyFilterSidebar.css";
 import React from "react";
+import API_BASE_URL from "../../../config";
 
 // -----------------------------
 // Reusable Components
@@ -86,8 +87,21 @@ const formatPriceCr = (val) => {
 // Main Sidebar Component
 // -----------------------------
 const PropertyFilterSidebar = forwardRef((props, ref) => {
-  const { onTagsChange, city = "", onCityRemove, initialPriceCr = 0, onPriceChange } = props;
+  const {
+    onTagsChange,
+    onFiltersChange,
+    city = "",
+    onCityRemove,
+    initialPriceCr = 0,
+    onPriceChange,
+  } = props;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [filterOptions, setFilterOptions] = useState({
+    amenities: [],
+    propertyStatus: [],
+    societyTypes: [],
+  });
+  const [loadingFilters, setLoadingFilters] = useState(true);
 
   const [toggles, setToggles] = useState({
     reraVerified: true,
@@ -99,16 +113,43 @@ const PropertyFilterSidebar = forwardRef((props, ref) => {
   // Budget slider: in Crores, 0 = any, max 5 Cr
   const [budgetCr, setBudgetCr] = useState(initialPriceCr);
 
-  const [propertyStatus, setPropertyStatus] = useState(["Ready-to-Move"]);
-  const [amenities, setAmenities] = useState([
-    "Balcony",
-    "Fitness Center",
-    "Parking Area",
-  ]);
-  const [societyType, setSocietyType] = useState([
-    "Gated",
-    "Advanced Security",
-  ]);
+  const [propertyStatus, setPropertyStatus] = useState([]);
+  const [amenities, setAmenities] = useState([]);
+  const [societyType, setSocietyType] = useState([]);
+
+  // Track expanded states for "More" buttons
+  const [expandedAmenities, setExpandedAmenities] = useState(false);
+  const [expandedPropertyStatus, setExpandedPropertyStatus] = useState(false);
+  const [expandedSocietyTypes, setExpandedSocietyTypes] = useState(false);
+
+  // Fetch filter options from backend
+  useEffect(() => {
+    const fetchFilters = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/properties/filters`);
+        if (response.ok) {
+          const data = await response.json();
+          setFilterOptions({
+            amenities: data.amenities || [],
+            propertyStatus: data.propertyStatus || [],
+            societyTypes: data.societyTypes || [],
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch filter options:', error);
+        // Fallback to empty arrays if fetch fails
+        setFilterOptions({
+          amenities: [],
+          propertyStatus: [],
+          societyTypes: [],
+        });
+      } finally {
+        setLoadingFilters(false);
+      }
+    };
+
+    fetchFilters();
+  }, []);
 
   // Sync budget slider with incoming prop changes
   useEffect(() => {
@@ -142,7 +183,19 @@ const PropertyFilterSidebar = forwardRef((props, ref) => {
     removeTag: removeTag,
   }));
 
-  // Notify parent when tags change
+  // Notify parent whenever structured filters change
+  React.useEffect(() => {
+    if (typeof onFiltersChange === "function") {
+      onFiltersChange({
+        priceRange: budgetCr,
+        propertyStatus,
+        amenities,
+        societyType,
+      });
+    }
+  }, [budgetCr, propertyStatus, amenities, societyType, onFiltersChange]);
+
+  // Notify parent when tag chips change
   React.useEffect(() => {
     if (typeof onTagsChange === "function") {
       onTagsChange(allTags);
@@ -256,14 +309,20 @@ const PropertyFilterSidebar = forwardRef((props, ref) => {
       <div className="filter-section">
         <h3 className="filter-title">Property Status</h3>
         <div className="filter-pills">
-          {["Ready-to-Move", "Under Construction", "New Launch"].map((s) => (
-            <FilterPill
-              key={s}
-              label={s}
-              isActive={propertyStatus.includes(s)}
-              onClick={() => toggleFilter("propertyStatus", s)}
-            />
-          ))}
+          {loadingFilters ? (
+            <p style={{ fontSize: "12px", color: "#999" }}>Loading...</p>
+          ) : filterOptions.propertyStatus.length > 0 ? (
+            filterOptions.propertyStatus.map((s) => (
+              <FilterPill
+                key={s}
+                label={s}
+                isActive={propertyStatus.includes(s)}
+                onClick={() => toggleFilter("propertyStatus", s)}
+              />
+            ))
+          ) : (
+            <p style={{ fontSize: "12px", color: "#999" }}>No options available</p>
+          )}
         </div>
       </div>
 
@@ -271,15 +330,31 @@ const PropertyFilterSidebar = forwardRef((props, ref) => {
       <div className="filter-section">
         <h3 className="filter-title">Amenities</h3>
         <div className="filter-pills">
-          {["Balcony", "Fitness Center", "Parking Area", "Free Wifi"].map((a) => (
-            <FilterPill
-              key={a}
-              label={a}
-              isActive={amenities.includes(a)}
-              onClick={() => toggleFilter("amenities", a)}
-            />
-          ))}
-          <button className="more-options-btn">+ 12 More &gt;</button>
+          {loadingFilters ? (
+            <p style={{ fontSize: "12px", color: "#999" }}>Loading...</p>
+          ) : filterOptions.amenities.length > 0 ? (
+            <>
+              {(expandedAmenities ? filterOptions.amenities : filterOptions.amenities.slice(0, 4)).map((a) => (
+                <FilterPill
+                  key={a}
+                  label={a}
+                  isActive={amenities.includes(a)}
+                  onClick={() => toggleFilter("amenities", a)}
+                />
+              ))}
+            </>
+          ) : (
+            <p style={{ fontSize: "12px", color: "#999" }}>No amenities available</p>
+          )}
+          {filterOptions.amenities.length > 4 && (
+            <button
+              className="more-options-btn"
+              onClick={() => setExpandedAmenities(!expandedAmenities)}
+              style={{ cursor: "pointer" }}
+            >
+              {expandedAmenities ? "- Show Less" : `+ ${filterOptions.amenities.length - 4} More >`}
+            </button>
+          )}
         </div>
       </div>
 
@@ -287,15 +362,31 @@ const PropertyFilterSidebar = forwardRef((props, ref) => {
       <div className="filter-section">
         <h3 className="filter-title">Society Type</h3>
         <div className="filter-pills">
-          {["Gated", "Advanced Security", "Lounge", "Senior Citizen"].map((t) => (
-            <FilterPill
-              key={t}
-              label={t}
-              isActive={societyType.includes(t)}
-              onClick={() => toggleFilter("societyType", t)}
-            />
-          ))}
-          <button className="more-options-btn">+ 6 More &gt;</button>
+          {loadingFilters ? (
+            <p style={{ fontSize: "12px", color: "#999" }}>Loading...</p>
+          ) : filterOptions.societyTypes.length > 0 ? (
+            <>
+              {(expandedSocietyTypes ? filterOptions.societyTypes : filterOptions.societyTypes.slice(0, 4)).map((t) => (
+                <FilterPill
+                  key={t}
+                  label={t}
+                  isActive={societyType.includes(t)}
+                  onClick={() => toggleFilter("societyType", t)}
+                />
+              ))}
+            </>
+          ) : (
+            <p style={{ fontSize: "12px", color: "#999" }}>No options available</p>
+          )}
+          {filterOptions.societyTypes.length > 4 && (
+            <button
+              className="more-options-btn"
+              onClick={() => setExpandedSocietyTypes(!expandedSocietyTypes)}
+              style={{ cursor: "pointer" }}
+            >
+              {expandedSocietyTypes ? "- Show Less" : `+ ${filterOptions.societyTypes.length - 4} More >`}
+            </button>
+          )}
         </div>
       </div>
     </>

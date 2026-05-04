@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import "../../blog_page_css/FamousSection.css";
+import { getBlogTargetFromSlug } from '../../../utils/blogSlug';
 
 const FamousSection = () => {
   const famous = [
@@ -36,7 +37,7 @@ const FamousSection = () => {
   return (
     <div className="famous-section">
       <h2 className="famous-heading">
-      Curated Picks Just for You
+        Curated Picks Just for You
       </h2>
 
       <div className="famous-cards">
@@ -58,7 +59,7 @@ const FamousSection = () => {
               </div>
               <p className="famous-intro">{blog.intro_paragraph?.slice(0, 80)}...</p>
               <div className="famous-link">
-                <Link to={`/blog/${blog.slug}`} className="famous-view">View Post</Link>
+                <Link to={getBlogTargetFromSlug(blog.slug)} className="famous-view">View Post</Link>
                 <svg className="famous-arrow" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>

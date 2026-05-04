@@ -2,6 +2,7 @@ import API_BASE_URL from '../../../config';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchBlogs } from '../../../services/api';
+import { getBlogTargetFromSlug, isExternalBlogSlug } from '../../../utils/blogSlug';
 
 const fallbackFeatured = {
   img: '/building.webp',
@@ -101,13 +102,23 @@ const BlogSection = ({ id }) => {
 
   const handleFeaturedClick = () => {
     if (featured.slug) {
-      navigate(`/blog/${featured.slug}`);
+      const target = getBlogTargetFromSlug(featured.slug);
+      if (isExternalBlogSlug(featured.slug)) {
+        window.open(target, '_blank', 'noopener,noreferrer');
+      } else {
+        navigate(target);
+      }
     }
   };
 
   const handleArticleClick = (article) => {
     if (article.slug) {
-      navigate(`/blog/${article.slug}`);
+      const target = getBlogTargetFromSlug(article.slug);
+      if (isExternalBlogSlug(article.slug)) {
+        window.open(target, '_blank', 'noopener,noreferrer');
+      } else {
+        navigate(target);
+      }
     }
   };
 

@@ -1,26 +1,31 @@
 import React, { useState } from 'react';
+import api from '../services/apiInstance';
 import Navbar from './Navbar'; // Adjust path as needed
 
+const initialPropertyForm = {
+  propertyTitle: '',
+  builderName: '',
+  propertyType: '',
+  description: '',
+  price: '',
+  location: '',
+  address: '',
+  bedrooms: '',
+  bathrooms: '',
+  area: '',
+  availabilityStatus: '',
+  images: [],
+  listingDate: '',
+  contactNumber: '',
+  email: '',
+};
+
 const PropertiesManagement = () => {
-  const [propertyForm, setPropertyForm] = useState({
-    propertyTitle: '',
-    propertyType: '',
-    description: '',
-    price: '',
-    location: '',
-    address: '',
-    bedrooms: '',
-    bathrooms: '',
-    area: '',
-    availabilityStatus: '',
-    images: [], // Array to hold image files
-    listingDate: '',
-    contactNumber: '',
-    email: '',
-  });
+  const [propertyForm, setPropertyForm] = useState(initialPropertyForm);
 
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState('');
 
   // Basic validation function (will expand later)
   const validateField = (name, value) => {
@@ -167,7 +172,7 @@ const PropertiesManagement = () => {
     setFormErrors(prevErrors => ({ ...prevErrors, images: imageError }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     // Validate all fields before submitting
@@ -186,10 +191,42 @@ const PropertiesManagement = () => {
 
     if (Object.keys(errors).length === 0) {
       setIsSubmitting(true);
-      // TODO: Implement actual submission logic (API call, etc.)
-      console.log('Form Data:', propertyForm);
-      alert('Property form submitted successfully!');
-      setIsSubmitting(false);
+      setSubmitMessage('');
+      try {
+        const meResponse = await api.get('/auth/me');
+        const userId = meResponse.data?.id;
+        if (!userId) {
+          throw new Error('Unable to resolve admin user id');
+        }
+
+        await api.post('/properties', {
+          Property_Name: propertyForm.propertyTitle,
+          Location: propertyForm.location,
+          Carpet_Area: propertyForm.area,
+          Price_Starting_From: propertyForm.price,
+          Pricing: propertyForm.price,
+          Builder_Name: propertyForm.builderName || null,
+          Builder_Details: propertyForm.builderName ? { builder_name: propertyForm.builderName } : null,
+          Existing_Configurations: propertyForm.propertyType ? [propertyForm.propertyType] : [],
+          Address: propertyForm.address,
+          Project_Status: propertyForm.availabilityStatus,
+          Possession_Date: propertyForm.listingDate,
+          RERA_ID: '',
+          user_id: userId,
+        });
+
+        setSubmitMessage('Property created successfully.');
+        setPropertyForm(initialPropertyForm);
+        setFormErrors({});
+      } catch (error) {
+        setSubmitMessage('');
+        setFormErrors(prevErrors => ({
+          ...prevErrors,
+          submit: error.message || 'Failed to create property',
+        }));
+      } finally {
+        setIsSubmitting(false);
+      }
     } else {
       console.log('Form has errors:', errors);
     }
@@ -312,10 +349,104 @@ const PropertiesManagement = () => {
 
       {/* Main Content */}
       <div style={{ flex: 1, padding: '32px 40px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: 24, fontWeight: 700, color: '#333', marginBottom: 30 }}>View Listings</div>
-        <div style={{ textAlign: 'center', padding: '50px', color: '#888', fontSize: '18px' }}>
-          No listings to display. Add new properties using the form.
-        </div>
+        <div style={{ fontSize: 24, fontWeight: 700, color: '#333', marginBottom: 12 }}>View Listings</div>
+        <div style={{ color: '#666', marginBottom: 24 }}>Create a new property listing and publish it to the main catalog.</div>
+
+        <form onSubmit={handleSubmit} style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 12px 30px rgba(0,0,0,0.08)', maxWidth: 1100 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Property Title</label>
+              <input name="propertyTitle" value={propertyForm.propertyTitle} onChange={handleInputChange} style={inputStyle(!!formErrors.propertyTitle)} />
+              {formErrors.propertyTitle && <div style={errorTextStyle}>{formErrors.propertyTitle}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Builder Name</label>
+              <input name="builderName" value={propertyForm.builderName} onChange={handleInputChange} style={inputStyle(!!formErrors.builderName)} />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Property Type</label>
+              <input name="propertyType" value={propertyForm.propertyType} onChange={handleInputChange} style={inputStyle(!!formErrors.propertyType)} />
+              {formErrors.propertyType && <div style={errorTextStyle}>{formErrors.propertyType}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Price</label>
+              <input name="price" value={propertyForm.price} onChange={handleInputChange} style={inputStyle(!!formErrors.price)} />
+              {formErrors.price && <div style={errorTextStyle}>{formErrors.price}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Location</label>
+              <input name="location" value={propertyForm.location} onChange={handleInputChange} style={inputStyle(!!formErrors.location)} />
+              {formErrors.location && <div style={errorTextStyle}>{formErrors.location}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Address</label>
+              <input name="address" value={propertyForm.address} onChange={handleInputChange} style={inputStyle(!!formErrors.address)} />
+              {formErrors.address && <div style={errorTextStyle}>{formErrors.address}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Bedrooms</label>
+              <input name="bedrooms" value={propertyForm.bedrooms} onChange={handleInputChange} style={inputStyle(!!formErrors.bedrooms)} />
+              {formErrors.bedrooms && <div style={errorTextStyle}>{formErrors.bedrooms}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Bathrooms</label>
+              <input name="bathrooms" value={propertyForm.bathrooms} onChange={handleInputChange} style={inputStyle(!!formErrors.bathrooms)} />
+              {formErrors.bathrooms && <div style={errorTextStyle}>{formErrors.bathrooms}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Area</label>
+              <input name="area" value={propertyForm.area} onChange={handleInputChange} style={inputStyle(!!formErrors.area)} />
+              {formErrors.area && <div style={errorTextStyle}>{formErrors.area}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Availability Status</label>
+              <input name="availabilityStatus" value={propertyForm.availabilityStatus} onChange={handleInputChange} style={inputStyle(!!formErrors.availabilityStatus)} />
+              {formErrors.availabilityStatus && <div style={errorTextStyle}>{formErrors.availabilityStatus}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Listing Date</label>
+              <input type="date" name="listingDate" value={propertyForm.listingDate} onChange={handleInputChange} style={inputStyle(!!formErrors.listingDate)} />
+              {formErrors.listingDate && <div style={errorTextStyle}>{formErrors.listingDate}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Contact Number</label>
+              <input name="contactNumber" value={propertyForm.contactNumber} onChange={handleInputChange} style={inputStyle(!!formErrors.contactNumber)} />
+              {formErrors.contactNumber && <div style={errorTextStyle}>{formErrors.contactNumber}</div>}
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Email</label>
+              <input type="email" name="email" value={propertyForm.email} onChange={handleInputChange} style={inputStyle(!!formErrors.email)} />
+              {formErrors.email && <div style={errorTextStyle}>{formErrors.email}</div>}
+            </div>
+          </div>
+
+          <div style={fileInputContainerStyle}>
+            <label style={fileInputLabelStyle}>Images</label>
+            <input type="file" multiple accept="image/png,image/jpeg" onChange={handleFileChange} />
+            {formErrors.images && <div style={errorTextStyle}>{formErrors.images}</div>}
+            <div style={fileListStyle}>
+              {propertyForm.images.length > 0 ? `${propertyForm.images.length} image(s) selected` : 'No images selected'}
+            </div>
+          </div>
+
+          {formErrors.submit && <div style={{ ...errorTextStyle, marginBottom: 16 }}>{formErrors.submit}</div>}
+          {submitMessage && <div style={{ color: '#0f766e', marginBottom: 16, fontWeight: 600 }}>{submitMessage}</div>}
+
+          <div>
+            <button type="submit" style={saveButtonStyle}>{isSubmitting ? 'Saving...' : 'Save Property'}</button>
+            <button
+              type="button"
+              onClick={() => {
+                setPropertyForm(initialPropertyForm);
+                setFormErrors({});
+                setSubmitMessage('');
+              }}
+              style={cancelButtonStyle}
+            >
+              Reset
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

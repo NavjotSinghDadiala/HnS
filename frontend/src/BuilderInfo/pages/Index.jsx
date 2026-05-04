@@ -153,11 +153,11 @@ function BuilderInfoIndex() {
           </div>
 
           <div className="builder-section who-we-are-section">
-            <WhoWeAreSection />
+            <WhoWeAreSection builder={builder} />
           </div>
 
           <div className="builder-section floor-plans-section">
-            <FloorPlansSection />
+            <FloorPlansSection builderId={builder?.rera_id} builder={builder} />
           </div>
 
           <div className="builder-section search-filter-section">

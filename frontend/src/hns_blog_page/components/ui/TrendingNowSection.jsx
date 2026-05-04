@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import "../../blog_page_css/TrendingNowSection.css";
+import { getBlogTargetFromSlug } from '../../../utils/blogSlug';
 
 const TrendingNowSection = ({ blogs = [] }) => {
   const fallbackItems = [
@@ -41,16 +42,16 @@ const TrendingNowSection = ({ blogs = [] }) => {
 
   const trendingItems = blogs.length > 0
     ? blogs.slice(0, 3).map((blog) => ({
-        id: blog.id,
-        featured_image: blog.featured_image ? `/uploads/${blog.featured_image}` : '/news.jpg',
-        featured_image_alt: blog.featured_image_alt || blog.title,
-        title: blog.title,
-        category: 'Trending',
-        badge: 'Hot',
-        author: blog.author || 'Unknown',
-        created_at: blog.created_at,
-        slug: blog.slug,
-      }))
+      id: blog.id,
+      featured_image: blog.featured_image ? `/uploads/${blog.featured_image}` : '/news.jpg',
+      featured_image_alt: blog.featured_image_alt || blog.title,
+      title: blog.title,
+      category: 'Trending',
+      badge: 'Hot',
+      author: blog.author || 'Unknown',
+      created_at: blog.created_at,
+      slug: blog.slug,
+    }))
     : fallbackItems;
 
   return (
@@ -66,7 +67,7 @@ const TrendingNowSection = ({ blogs = [] }) => {
 
       <div className="trending-cards-container">
         {trendingItems.map((news) => (
-          <Link key={news.id} to={`/blog/${news.slug}`} className="trending-card-link">
+          <Link key={news.id} to={getBlogTargetFromSlug(news.slug)} className="trending-card-link">
             <article className="trending-card">
               <div className="card-image-wrapper">
                 {news.badge && (
@@ -88,9 +89,9 @@ const TrendingNowSection = ({ blogs = [] }) => {
                   <span className="meta-dot">•</span>
                   <span className="meta-date">{new Date(news.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                 </div>
-                
+
                 <h3 className="card-title">{news.title}</h3>
-                
+
                 <div className="card-footer">
                   <span className="author-name">By {news.author}</span>
                   <div className="read-more-btn">

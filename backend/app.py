@@ -156,8 +156,9 @@ _index_lock = threading.Lock()
 _emb_index = None
 
 # Add these configurations
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BACKEND_DIR, 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'pdf'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
@@ -477,7 +478,7 @@ def search_builders():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/builders/<rera_id>', methods=['GET'])
+@app.route('/api/builders/<path:rera_id>', methods=['GET'])
 def get_builder(rera_id):
     try:
         builder = Builder.query.get_or_404(rera_id)
@@ -577,7 +578,8 @@ def create_builder():
         print(f"Error creating builder: {str(e)}")
         return jsonify({'message': f'Error creating builder profile: {str(e)}'}), 500
 
-@app.route('/api/builders/<rera_id>', methods=['PUT'])
+@app.route('/api/builders/<path:rera_id>', methods=['PUT'])
+@admin_only
 def update_builder(rera_id):
     try:
         builder = Builder.query.get_or_404(rera_id)
@@ -599,7 +601,8 @@ def update_builder(rera_id):
         return jsonify({'error': str(e)}), 500
 
 import re
-@app.route('/api/builders/<rera_id>', methods=['DELETE'])
+@app.route('/api/builders/<path:rera_id>', methods=['DELETE'])
+@admin_only
 def delete_builder(rera_id):
     try:
         builder = Builder.query.get_or_404(rera_id)
@@ -610,7 +613,7 @@ def delete_builder(rera_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/builders/<rera_id>/projects', methods=['GET'])
+@app.route('/api/builders/<path:rera_id>/projects', methods=['GET'])
 def get_builder_projects(rera_id):
     try:
         status = request.args.get('status')
@@ -660,7 +663,7 @@ def _create_property_for_project(project, user_id, data):
     
 
 #-----------------STEP 1 ROUTING FETCHING DETAILS FROM FRONTEND AND PUSHING TO DATABASE------------------------
-@app.route('/api/builders/<rera_id>/projects/step1', methods=['POST'])
+@app.route('/api/builders/<path:rera_id>/projects/step1', methods=['POST'])
 @admin_only
 def create_project_step1(rera_id):
     data = request.json
@@ -700,7 +703,7 @@ def create_project_step1(rera_id):
     db.session.commit()
     return jsonify(new_project.to_dict()), 201
 
-@app.route('/api/builders/<rera_id>/projects/step2', methods=['POST'])
+@app.route('/api/builders/<path:rera_id>/projects/step2', methods=['POST'])
 @admin_only
 def create_project_step2(rera_id):
     data = request.json
@@ -720,7 +723,7 @@ def create_project_step2(rera_id):
     db.session.commit()
     return jsonify(project.to_dict()), 200
 
-@app.route('/api/builders/<rera_id>/projects/step4', methods=['POST'])
+@app.route('/api/builders/<path:rera_id>/projects/step4', methods=['POST'])
 @admin_only
 def create_project_step4(rera_id):
     # Handle both form data and JSON data
@@ -756,7 +759,7 @@ def create_project_step4(rera_id):
     db.session.commit()
     return jsonify(project.to_dict()), 200
 
-@app.route('/api/builders/<rera_id>/projects/step5', methods=['POST'])
+@app.route('/api/builders/<path:rera_id>/projects/step5', methods=['POST'])
 @admin_only
 def create_project_step5(rera_id):
     data = request.json
@@ -827,7 +830,8 @@ def generate_slug_with_perplexity(project, api_key):
         # Fallback to slugify
         return slugify(f"{project.title}-{project.locality}-{project.city}")
 
-@app.route('/api/builders/<rera_id>/projects/<int:project_id>', methods=['PATCH'])
+@app.route('/api/builders/<path:rera_id>/projects/<int:project_id>', methods=['PATCH'])
+@admin_only
 def update_project_step(rera_id, project_id):
     try:
         data = request.json
@@ -1313,12 +1317,39 @@ def delete_user(id):
 # Utility to generate slug from title
 import re
 from unicodedata import normalize
+from urllib.parse import urlparse
 
 def generate_slug(title):
     slug = normalize('NFKD', title).encode('ascii', 'ignore').decode('ascii')
     slug = re.sub(r'[^a-zA-Z0-9\s-]', '', slug).lower()
     slug = re.sub(r'\s+', '-', slug).strip('-')
     return slug
+
+def normalize_blog_slug(raw_slug, title):
+    slug_input = (raw_slug or '').strip()
+    if not slug_input:
+        return generate_slug(title or '')
+
+    if re.match(r'^https?://', slug_input, flags=re.IGNORECASE):
+        parsed = urlparse(slug_input)
+        path_segment = parsed.path.strip('/').split('/')[-1] if parsed.path else ''
+        slug_input = path_segment or parsed.netloc or slug_input
+
+    return generate_slug(slug_input)
+
+def ensure_unique_blog_slug(candidate_slug, exclude_blog_id=None):
+    base_slug = (candidate_slug or '').strip() or 'blog'
+    unique_slug = base_slug
+    counter = 2
+
+    while True:
+        query = Blog.query.filter_by(slug=unique_slug)
+        if exclude_blog_id is not None:
+            query = query.filter(Blog.id != exclude_blog_id)
+        if not query.first():
+            return unique_slug
+        unique_slug = f"{base_slug}-{counter}"
+        counter += 1
 
 # Utility to save uploaded images
 def save_image(file):
@@ -1354,7 +1385,7 @@ def create_blog():
         content3 = data.get('content3')
         meta_description = data.get('metaDescription')
         focus_keywords = data.get('focusKeywords')
-        slug = data.get('slug') or generate_slug(title)
+        slug = ensure_unique_blog_slug(normalize_blog_slug(data.get('slug'), title))
         featured_image_alt = data.get('featuredImageAlt')
         alt_text1 = data.get('altText1')
         alt_text2 = data.get('altText2')
@@ -1362,15 +1393,17 @@ def create_blog():
         interlinks = data.get('interlinks')  # JSON string
         external_links = data.get('externalLinks')  # JSON string
 
+        # Validate uploaded file types with clear error response
+        for field_name in ('featuredImage', 'image1', 'image2', 'image3'):
+            file_obj = files.get(field_name)
+            if file_obj and file_obj.filename and not allowed_file(file_obj.filename):
+                return jsonify({'error': f'Invalid file type for {field_name}. Allowed: {", ".join(sorted(ALLOWED_EXTENSIONS))}'}), 400
+
         # Save images
         featured_image = save_image(files.get('featuredImage'))
         image1 = save_image(files.get('image1'))
         image2 = save_image(files.get('image2'))
         image3 = save_image(files.get('image3'))
-
-        # Ensure slug is unique
-        if Blog.query.filter_by(slug=slug).first():
-            return jsonify({'error': 'Slug already exists'}), 400
 
         blog = Blog(
             title=title,
@@ -1403,24 +1436,29 @@ def create_blog():
 
 # API to list all blogs (for admin dashboard)
 @app.route('/api/blogs', methods=['GET'])
-@jwt_required()
 def list_blogs():
     blogs = Blog.query.order_by(Blog.created_at.desc()).all()
-    print(f"Found {len(blogs)} blogs")
+    slugs_updated = False
     for blog in blogs:
-        print(f"Blog: {blog.title} - Slug: {blog.slug}")
+        if blog.slug and re.match(r'^https?://', blog.slug, flags=re.IGNORECASE):
+            fixed_slug = ensure_unique_blog_slug(normalize_blog_slug(blog.slug, blog.title), exclude_blog_id=blog.id)
+            if fixed_slug != blog.slug:
+                blog.slug = fixed_slug
+                slugs_updated = True
+
+    if slugs_updated:
+        db.session.commit()
+
     return jsonify([b.to_dict() for b in blogs])
 
 # Get a single blog by ID
 @app.route('/api/blogs/<int:blog_id>', methods=['GET'])
-@jwt_required()
 def get_blog(blog_id):
     blog = Blog.query.get_or_404(blog_id)
     return jsonify(blog.to_dict())
 
 # Get a single blog by slug
 @app.route('/api/blogs/slug/<slug>', methods=['GET'])
-@jwt_required()
 def get_blog_by_slug(slug):
     print(f"Fetching blog with slug: {slug}")
     blog = Blog.query.filter_by(slug=slug).first()
@@ -1432,10 +1470,17 @@ def get_blog_by_slug(slug):
 
 # Update a blog by ID (multipart/form-data for images)
 @app.route('/api/blogs/<int:blog_id>', methods=['PUT'])
+@admin_only
 def update_blog(blog_id):
     blog = Blog.query.get_or_404(blog_id)
     data = request.form
     files = request.files
+
+    for field_name in ('featuredImage', 'image1', 'image2', 'image3'):
+        file_obj = files.get(field_name)
+        if file_obj and file_obj.filename and not allowed_file(file_obj.filename):
+            return jsonify({'error': f'Invalid file type for {field_name}. Allowed: {", ".join(sorted(ALLOWED_EXTENSIONS))}'}), 400
+
     blog.title = data.get('title', blog.title)
     blog.intro_paragraph = data.get('introParagraph', blog.intro_paragraph)
     blog.subheading1 = data.get('subheading1', blog.subheading1)
@@ -1446,7 +1491,8 @@ def update_blog(blog_id):
     blog.content3 = data.get('content3', blog.content3)
     blog.meta_description = data.get('metaDescription', blog.meta_description)
     blog.focus_keywords = data.get('focusKeywords', blog.focus_keywords)
-    blog.slug = data.get('slug', blog.slug)
+    normalized_slug = normalize_blog_slug(data.get('slug', blog.slug), blog.title)
+    blog.slug = ensure_unique_blog_slug(normalized_slug, exclude_blog_id=blog.id)
     blog.featured_image_alt = data.get('featuredImageAlt', blog.featured_image_alt)
     blog.alt_text1 = data.get('altText1', blog.alt_text1)
     blog.alt_text2 = data.get('altText2', blog.alt_text2)
@@ -1467,6 +1513,7 @@ def update_blog(blog_id):
 
 # Delete a blog by ID (and its images)
 @app.route('/api/blogs/<int:blog_id>', methods=['DELETE'])
+@admin_only
 def delete_blog(blog_id):
     blog = Blog.query.get_or_404(blog_id)
     # Optionally, delete image files from disk
@@ -1536,7 +1583,13 @@ def serve_blog(slug):
 # Serve uploaded images
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    normalized = (filename or '').replace('\\', '/').lstrip('/')
+    if normalized.startswith('backend/uploads/'):
+        normalized = normalized[len('backend/uploads/'):]
+    if normalized.startswith('uploads/'):
+        normalized = normalized[len('uploads/'):]
+    normalized = os.path.basename(normalized)
+    return send_from_directory(app.config['UPLOAD_FOLDER'], normalized)
 
 # Remove this endpoint since we're using the existing /uploads/<filename> endpoint
 
@@ -1577,7 +1630,7 @@ def get_all_projects():
     projects = BuilderProject.query.all()
     return jsonify([p.to_dict() for p in projects])
 
-@app.route('/api/builders/<rera_id>/projects/upload-image', methods=['POST'])
+@app.route('/api/builders/<path:rera_id>/projects/upload-image', methods=['POST'])
 @admin_only
 def upload_project_image(rera_id):
     print(f"Upload project image called with rera_id: {rera_id}")
@@ -1711,7 +1764,7 @@ def get_latest_geolocation():
 # ------------------------------------------------------- AI Blog Summarization -------------------------------------------------- ---
 
 @app.route('/api/blogs/<slug>/summary', methods=['GET'])
-@clerk_required()
+@clerk_required(optional=True)
 def summarize_blog(slug):
     api_key = os.getenv('PERPLEXITY_API_KEY')
     blog = Blog.query.filter_by(slug=slug).first()
@@ -1972,11 +2025,11 @@ def _canonical_property_status(value: str) -> str:
         return ''
 
 @app.route('/api/properties/filters', methods=['GET'])
-@clerk_required()
 def get_filters():
     """Return unique filter options sourced from BuilderProject and Property tables.
     Includes amenities (normalized), property_status, project status, and derived society types.
     Optional query: location= filters to projects/properties matching location.
+    Public endpoint - no authentication required.
     """
     location = request.args.get('location', '', type=str)
 

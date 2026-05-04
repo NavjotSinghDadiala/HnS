@@ -1,8 +1,8 @@
 /* eslint-disable no-unused-vars */
 import API_BASE_URL from '../config';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import api from '../services/apiInstance';
 
 function BlogManagement() {
   const [posts, setPosts] = useState([]);
@@ -11,8 +11,6 @@ function BlogManagement() {
   const [selectedPost, setSelectedPost] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const navigate = useNavigate();
-
-  const FLASK_API_URL = `${API_BASE_URL}/api`;
 
   useEffect(() => {
     fetchPosts();
@@ -23,7 +21,7 @@ function BlogManagement() {
       setLoading(true);
       setError(null);
       // Fetch posts from Flask backend
-      const response = await axios.get(`${FLASK_API_URL}/blogs`);
+      const response = await api.get('/blogs');
       setPosts(response.data);
     } catch (err) {
       setError('Failed to fetch posts from backend.');
@@ -56,7 +54,7 @@ function BlogManagement() {
   const handleDelete = async (blogId) => {
     if (!window.confirm('Are you sure you want to delete this blog?')) return;
     try {
-      await axios.delete(`${FLASK_API_URL}/blogs/${blogId}`);
+      await api.delete(`/blogs/${blogId}`);
       fetchPosts();
       setShowModal(false);
     } catch (err) {

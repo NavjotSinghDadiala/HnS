@@ -3,6 +3,7 @@ import Select from 'react-select';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { FaArrowLeft, FaArrowRight, FaCheck, FaUpload, FaMapMarkerAlt, FaHome, FaTools, FaStar, FaImages, FaFileAlt } from 'react-icons/fa';
+import api from '../services/apiInstance';
 
 const ProjectAdd = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -71,9 +72,8 @@ const ProjectAdd = () => {
   // Fetch builder name when RERA ID changes (step 1)
   useEffect(() => {
     if (form.reraId) {
-      fetch(`${API_URL}/builders/${form.reraId}`)
-        .then(res => res.json())
-        .then(data => {
+      api.get(`/builders/${form.reraId}`)
+        .then(({ data }) => {
           setBuilderName(data.company_name || '');
         })
         .catch(() => setBuilderName(''));
@@ -87,9 +87,8 @@ const ProjectAdd = () => {
     if (currentStep === 2 || currentStep === 3 || currentStep === 4 || currentStep === 5 || currentStep === 6) {
       setProjectsLoading(true);
       setProjectsError(null);
-      fetch(`${API_URL}/projects`)
-        .then(res => res.json())
-        .then(data => {
+      api.get('/projects')
+        .then(({ data }) => {
           setProjects(Array.isArray(data) ? data : []);
           setProjectsLoading(false);
         })
@@ -237,24 +236,19 @@ const ProjectAdd = () => {
           setMissingFields(missing);
           return false;
         }
- //---------------------------- This code sends step 1 data to backend ----------------------------------------
-        const res = await fetch(`${API_URL}/builders/${form.reraId}/projects/step1`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: form.projectName,
-            builder_name: form.builder, // <-- Use the value from the form input
-            description: form.description,
-            location: form.projectAddress,
-            property_type: form.propertyType,
-            sub_type: form.subType,
-            property_status: form.propertyStatus,
-            possession_date: form.possessionDate,
-            configuration: form.configuration
-          })
+        //---------------------------- This code sends step 1 data to backend ----------------------------------------
+        const res = await api.post(`/builders/${form.reraId}/projects/step1`, {
+          title: form.projectName,
+          builder_name: form.builder, // <-- Use the value from the form input
+          description: form.description,
+          location: form.projectAddress,
+          property_type: form.propertyType,
+          sub_type: form.subType,
+          property_status: form.propertyStatus,
+          possession_date: form.possessionDate,
+          configuration: form.configuration
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to save step 1');
+        const data = res.data;
         setProjectId(data.id);
         setCreatedProject(data); // For showing slugs after step 1
         return true;
@@ -265,24 +259,19 @@ const ProjectAdd = () => {
           setMissingFields(missing);
           return false;
         }
-// ---------------------------Send step 2 data to backend---------------------------------------------
-        const res = await fetch(`${API_URL}/builders/${form.reraId}/projects/step2`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: projectId,
-            totalUnits: form.totalUnits,
-            pricePerSqft: form.pricePerSqft,
-            carpetAreaMin: form.carpetAreaMin,
-            carpetAreaMax: form.carpetAreaMax,
-            priceMin: form.priceMin,
-            priceMax: form.priceMax,
-            bookingAmount: form.bookingAmount,
-            flat_number: form.flat_number // <-- send flat_number
-          })
+        // ---------------------------Send step 2 data to backend---------------------------------------------
+        const res = await api.post(`/builders/${form.reraId}/projects/step2`, {
+          project_id: projectId,
+          totalUnits: form.totalUnits,
+          pricePerSqft: form.pricePerSqft,
+          carpetAreaMin: form.carpetAreaMin,
+          carpetAreaMax: form.carpetAreaMax,
+          priceMin: form.priceMin,
+          priceMax: form.priceMax,
+          bookingAmount: form.bookingAmount,
+          flat_number: form.flat_number // <-- send flat_number
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to save step 2');
+        const data = res.data;
         setCreatedProject(data); // Update with latest data
         return true;
       } else if (projectId) {
@@ -310,32 +299,32 @@ const ProjectAdd = () => {
             setMissingFields(missing);
             return false;
           }
-          
+
           // Use selected project ID or fall back to current project ID
           const targetProjectId = form.selectedProjectId || projectId;
           if (!targetProjectId) {
             setStepError('Please select a project to update.');
             return false;
           }
-          
+
           // Get the builder_id from the selected project
           const selectedProject = projects.find(p => p.id === targetProjectId);
           const targetBuilderId = selectedProject ? selectedProject.builder_id : form.reraId;
-          
+
           // Create FormData for file uploads
           const formData = new FormData();
           formData.append('project_id', targetProjectId);
           formData.append('towers', form.towers);
           formData.append('floors_per_tower', form.floorsPerTower);
           formData.append('construction_status', form.constructionStatus);
-          
+
           // Add floor plan files
           if (form.floorPlans && form.floorPlans.length > 0) {
             form.floorPlans.forEach(file => {
               formData.append('floor_plans', file);
             });
           }
-          
+
           console.log('Sending step 4 data:', {
             project_id: targetProjectId,
             builder_id: targetBuilderId,
@@ -344,13 +333,9 @@ const ProjectAdd = () => {
             construction_status: form.constructionStatus,
             floor_plans_count: form.floorPlans.length
           });
-          
-          const res = await fetch(`${API_URL}/builders/${targetBuilderId}/projects/step4`, {
-            method: 'POST',
-            body: formData
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Failed to save step 4');
+
+          const res = await api.post(`/builders/${targetBuilderId}/projects/step4`, formData);
+          const data = res.data;
           setCreatedProject(data);
           return true;
         } else if (currentStep === 5) {
@@ -367,16 +352,11 @@ const ProjectAdd = () => {
             builder_id: targetBuilderId,
             amenities: form.amenities
           });
-          const res = await fetch(`${API_URL}/builders/${targetBuilderId}/projects/step5`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              project_id: targetProjectId,
-              amenities: form.amenities
-            })
+          const res = await api.post(`/builders/${targetBuilderId}/projects/step5`, {
+            project_id: targetProjectId,
+            amenities: form.amenities
           });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Failed to save step 5');
+          const data = res.data;
           setCreatedProject(data);
           return true;
         } else if (currentStep === 6) {
@@ -390,13 +370,8 @@ const ProjectAdd = () => {
             form_status: 'complete'
           };
         }
-        const res = await fetch(`${API_URL}/builders/${form.reraId}/projects/${projectId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(patchData)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to save step');
+        const res = await api.patch(`/builders/${form.reraId}/projects/${projectId}`, patchData);
+        const data = res.data;
         setCreatedProject(data); // Update with latest data
         return true;
       } else {
@@ -424,30 +399,7 @@ const ProjectAdd = () => {
 
   const handleSubmit = () => {
     console.log('Form submitted:', form);
-    fetch(`${API_URL}/builders/${form.reraId}/projects`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: form.projectName,
-        description: form.description,
-        location: form.projectAddress,
-        total_units: form.totalUnits,
-        price_range: `${form.priceMin} - ${form.priceMax}`,
-        completion_date: form.possessionDate ? form.possessionDate.split('T')[0] : null,
-        status: form.propertyStatus,
-        availability_date: form.availability_date ? form.availability_date.split('T')[0] : null,
-        flat_number: form.flat_number,
-        furnishing: form.furnishing,
-        image_urls: '', // Add image upload logic as needed
-      })
-    })
-      .then(res => res.json())
-      .then(data => {
-        setCreatedProject(data);
-      })
-      .catch(err => {
-        alert('Error creating project: ' + err.message);
-      });
+    nextStep();
   };
 
   // Styles
@@ -489,8 +441,8 @@ const ProjectAdd = () => {
     padding: '15px',
     marginBottom: '10px',
     borderRadius: '12px',
-    background: isActive ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 
-                isCompleted ? 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)' : 'transparent',
+    background: isActive ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' :
+      isCompleted ? 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)' : 'transparent',
     color: isActive || isCompleted ? 'white' : '#666',
     cursor: 'pointer',
     transition: 'all 0.3s ease',
@@ -655,7 +607,7 @@ const ProjectAdd = () => {
   //--------------------------------------ALL FORMS FRONTEND HERE ------------------------------------------
 
 
-const renderStepContent = () => {
+  const renderStepContent = () => {
     switch (currentStep) {
       case 1:
         return (
@@ -663,7 +615,7 @@ const renderStepContent = () => {
             <h2 style={{ marginBottom: '30px', color: '#333', fontSize: '24px', fontWeight: '700' }}>
               Basic Details
             </h2>
-            
+
             <div style={formGroupStyle}>
               <label style={labelStyle}>Property/Project Name *</label>
               <input
@@ -879,7 +831,7 @@ const renderStepContent = () => {
                 </div>
               )}
             </div>
-            
+
             <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Total Units *</label>
@@ -1143,7 +1095,7 @@ const renderStepContent = () => {
             <h2 style={{ marginBottom: '30px', color: '#333', fontSize: '24px', fontWeight: '700' }}>
               Construction Details
             </h2>
-            
+
             <div style={formGroupStyle}>
               <label style={labelStyle}>Select Project to Update *</label>
               {projectsLoading ? (
@@ -1153,9 +1105,10 @@ const renderStepContent = () => {
               ) : (
                 <Select
                   options={projects.map(p => ({ value: p.id, label: `${p.title} - ${p.location || 'N/A'}` }))}
-                  value={projects.find(p => p.id === (form.selectedProjectId || projectId)) ? 
-                    { value: form.selectedProjectId || projectId, 
-                      label: `${projects.find(p => p.id === (form.selectedProjectId || projectId))?.title} - ${projects.find(p => p.id === (form.selectedProjectId || projectId))?.location || 'N/A'}` 
+                  value={projects.find(p => p.id === (form.selectedProjectId || projectId)) ?
+                    {
+                      value: form.selectedProjectId || projectId,
+                      label: `${projects.find(p => p.id === (form.selectedProjectId || projectId))?.title} - ${projects.find(p => p.id === (form.selectedProjectId || projectId))?.location || 'N/A'}`
                     } : null}
                   onChange={opt => setForm({ ...form, selectedProjectId: opt ? opt.value : null })}
                   placeholder="Select a project to update"
@@ -1170,7 +1123,7 @@ const renderStepContent = () => {
                 />
               )}
             </div>
-            
+
             <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Number of Towers *</label>
@@ -1241,7 +1194,7 @@ const renderStepContent = () => {
               Amenities
             </h2>
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Select Project to Update * {(!form.selectedProjectId ? <span style={{color: 'red'}}>Required</span> : null)}</label>
+              <label style={labelStyle}>Select Project to Update * {(!form.selectedProjectId ? <span style={{ color: 'red' }}>Required</span> : null)}</label>
               {projectsLoading ? (
                 <div style={{ color: '#666', fontSize: '14px' }}>Loading projects...</div>
               ) : projectsError ? (
@@ -1249,9 +1202,10 @@ const renderStepContent = () => {
               ) : (
                 <Select
                   options={projects.map(p => ({ value: p.id, label: `${p.title} - ${p.location || 'N/A'}` }))}
-                  value={projects.find(p => p.id === form.selectedProjectId) ? 
-                    { value: form.selectedProjectId, 
-                      label: `${projects.find(p => p.id === form.selectedProjectId)?.title} - ${projects.find(p => p.id === form.selectedProjectId)?.location || 'N/A'}` 
+                  value={projects.find(p => p.id === form.selectedProjectId) ?
+                    {
+                      value: form.selectedProjectId,
+                      label: `${projects.find(p => p.id === form.selectedProjectId)?.title} - ${projects.find(p => p.id === form.selectedProjectId)?.location || 'N/A'}`
                     } : null}
                   onChange={opt => setForm({ ...form, selectedProjectId: opt ? opt.value : null })}
                   placeholder="Select a project to update"
@@ -1267,7 +1221,7 @@ const renderStepContent = () => {
                 />
               )}
             </div>
-            
+
             <div style={formGroupStyle}>
               <label style={labelStyle}>Select Amenities</label>
               <Select
@@ -1318,10 +1272,10 @@ const renderStepContent = () => {
             <h2 style={{ marginBottom: '30px', color: '#333', fontSize: '24px', fontWeight: '700' }}>
               Media
             </h2>
-            
+
             {/* Project Selection for Media */}
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Select Project to Update * {(!form.selectedProjectId ? <span style={{color: 'red'}}>Required</span> : null)}</label>
+              <label style={labelStyle}>Select Project to Update * {(!form.selectedProjectId ? <span style={{ color: 'red' }}>Required</span> : null)}</label>
               {projectsLoading ? (
                 <div style={{ color: '#666', fontSize: '14px' }}>Loading projects...</div>
               ) : projectsError ? (
@@ -1329,9 +1283,10 @@ const renderStepContent = () => {
               ) : (
                 <Select
                   options={projects.map(p => ({ value: p.id, label: `${p.title} - ${p.location || 'N/A'}` }))}
-                  value={projects.find(p => p.id === form.selectedProjectId) ? 
-                    { value: form.selectedProjectId, 
-                      label: `${projects.find(p => p.id === form.selectedProjectId)?.title} - ${projects.find(p => p.id === form.selectedProjectId)?.location || 'N/A'}` 
+                  value={projects.find(p => p.id === form.selectedProjectId) ?
+                    {
+                      value: form.selectedProjectId,
+                      label: `${projects.find(p => p.id === form.selectedProjectId)?.title} - ${projects.find(p => p.id === form.selectedProjectId)?.location || 'N/A'}`
                     } : null}
                   onChange={opt => setForm({ ...form, selectedProjectId: opt ? opt.value : null })}
                   placeholder="Select a project to update"
@@ -1347,7 +1302,7 @@ const renderStepContent = () => {
                 />
               )}
             </div>
-            
+
             {/* Project Image upload */}
             <div style={formGroupStyle}>
               <label style={labelStyle}>Project Image (Main)</label>
@@ -1380,41 +1335,32 @@ const renderStepContent = () => {
                   }
                   const selectedProject = projects.find(p => p.id === targetProjectId);
                   const targetBuilderId = selectedProject ? selectedProject.builder_id : form.reraId;
-                  
+
                   console.log('Uploading project image:', {
                     projectImage: form.projectImage,
                     targetProjectId,
                     targetBuilderId,
                     selectedProject
                   });
-                  
+
                   // Prepare FormData
                   const formData = new FormData();
                   formData.append('project_id', targetProjectId);
                   formData.append('project_image', form.projectImage);
-                  
+
                   console.log('FormData contents:');
                   for (let [key, value] of formData.entries()) {
                     console.log(key, value);
                   }
-                  
+
                   // Send to backend
-                  const res = await fetch(`${API_URL}/builders/${targetBuilderId}/projects/upload-image`, {
-                    method: 'POST',
-                    body: formData
-                  });
-                  
-                  console.log('Response status:', res.status);
-                  const data = await res.json();
+                  const res = await api.post(`/builders/${targetBuilderId}/projects/upload-image`, formData);
+                  const data = res.data;
                   console.log('Response data:', data);
-                  
-                  if (!res.ok) {
-                    setStepError(data.error || 'Failed to upload project image');
-                  } else {
-                    setStepError(null);
-                    setCreatedProject(data);
-                    alert('Project image uploaded successfully!');
-                  }
+
+                  setStepError(null);
+                  setCreatedProject(data);
+                  alert('Project image uploaded successfully!');
                 }}
               >
                 Upload Project Image
@@ -1472,7 +1418,7 @@ const renderStepContent = () => {
             <h2 style={{ marginBottom: '30px', color: '#333', fontSize: '24px', fontWeight: '700' }}>
               Additional Highlights
             </h2>
-            
+
             <div style={formGroupStyle}>
               <label style={labelStyle}>USPs (Multi-entry tags)</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px', marginBottom: '12px' }}>
@@ -1559,7 +1505,7 @@ const renderStepContent = () => {
         <h3 style={{ marginBottom: '30px', color: '#333', fontSize: '20px', fontWeight: '700', textAlign: 'center' }}>
           Add New Project
         </h3>
-        
+
         <div style={progressBarStyle}>
           <div style={progressFillStyle}></div>
         </div>

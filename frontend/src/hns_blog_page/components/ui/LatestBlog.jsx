@@ -2,6 +2,7 @@ import API_BASE_URL from '../../../config';
 import React from "react";
 import { Link } from "react-router-dom";
 import "../../blog_page_css/Latestblog.css";
+import { getBlogTargetFromSlug } from '../../../utils/blogSlug';
 
 const LatestBlog = ({ filteredBlogs }) => {
   if (!filteredBlogs || filteredBlogs.length === 0) {
@@ -14,7 +15,7 @@ const LatestBlog = ({ filteredBlogs }) => {
         {/* Featured Blog */}
         {filteredBlogs[0] && (
           <div className="featured-blog">
-            <Link to={`/blog/${filteredBlogs[0].slug}`} className="block group" tabIndex={0}>
+            <Link to={getBlogTargetFromSlug(filteredBlogs[0].slug)} className="block group" tabIndex={0}>
               <div className="featured-card">
                 <div className="relative">
                   <img
@@ -49,7 +50,7 @@ const LatestBlog = ({ filteredBlogs }) => {
         {/* Side Blogs */}
         <div className="side-blogs">
           {filteredBlogs.slice(1, 4).map((blog) => (
-            <Link key={blog.id} to={`/blog/${blog.slug}`} className="block group w-full" tabIndex={0}>
+            <Link key={blog.id} to={getBlogTargetFromSlug(blog.slug)} className="block group w-full" tabIndex={0}>
               <div className="side-card">
                 <span className="side-badge">Featured</span>
                 <img

@@ -109,7 +109,7 @@ const AdminRoute = ({ children }) => {
 
 const UserSync = () => {
   const { isSignedIn, isLoaded, getToken } = useAuth();
-  
+
   useEffect(() => {
     const syncGuest = async () => {
       if (isLoaded && isSignedIn) {
@@ -135,7 +135,7 @@ const UserSync = () => {
     };
     syncGuest();
   }, [isLoaded, isSignedIn, getToken]);
-  
+
   return null;
 };
 
@@ -254,7 +254,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/properties" element={<PropertyListing />} />
           <Route path="/property/:id" element={<PropertyListingPage />} />
-          <Route path="/builder" element={<BuilderInfoIndex />} />
+          <Route path="/builder" element={<Navigate to="/builders-page" replace />} />
           <Route path="/builder-info" element={<BuilderInfoIndex />} />
           <Route path="/builder/:builderName" element={<BuilderInfoIndex />} />
           <Route path="/blogs" element={<BlogLanding />} />

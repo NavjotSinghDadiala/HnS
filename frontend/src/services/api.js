@@ -88,6 +88,15 @@ export const fetchProperties = async (filters = {}) => {
         if (filters.bhkTypes && Array.isArray(filters.bhkTypes)) {
             filters.bhkTypes.forEach(type => params.append('type', type));
         }
+        if (filters.amenities && Array.isArray(filters.amenities)) {
+            filters.amenities.forEach(item => params.append('amenities', item));
+        }
+        if (filters.propertyStatus && Array.isArray(filters.propertyStatus)) {
+            filters.propertyStatus.forEach(item => params.append('property_status', item));
+        }
+        if (filters.societyType && Array.isArray(filters.societyType)) {
+            filters.societyType.forEach(item => params.append('society_type', item));
+        }
         const response = await fetch(`${API_URL}/properties/search?${params.toString()}`);
         if (!response.ok) throw new Error('Failed to fetch properties');
         return await response.json();

@@ -2,6 +2,7 @@ import os
 import json
 import re
 import hashlib
+import requests
 from datetime import datetime
 from enum import Enum
 from collections import Counter
@@ -32,10 +33,15 @@ load_dotenv()
 
 print("📂 Vector store: ChromaDB (SQLite)")
 
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
 # --- 2. EMBEDDINGS SETUP ---
 HF_MODEL_NAME = os.getenv("HF_EMBED_MODEL", "all-MiniLM-L6-v2")
 HF_LOCAL_ONLY = os.getenv("HF_LOCAL_FILES_ONLY", "true").lower() in ("1", "true", "yes", "on")
 FALLBACK_EMBED_DIM = int(os.getenv("FALLBACK_EMBED_DIM", "384"))
+HF_EMBED_DEVICE = os.getenv("HF_EMBED_DEVICE", "auto").strip().lower()
 
 
 class LocalFallbackEmbeddings:
@@ -74,6 +80,58 @@ class LocalFallbackEmbeddings:
 
 embeddings = None
 
+
+def _is_cuda_oom_error(exc):
+    msg = str(exc or "").lower()
+    return ("cuda" in msg and "out of memory" in msg) or "cuda out of memory" in msg
+
+
+def _torch_cuda_available():
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+class SafeHuggingFaceEmbeddings:
+    """
+    Wrapper that prefers CUDA and automatically falls back to CPU on runtime OOM.
+    """
+
+    def __init__(self, base_embeddings, model_name, local_only=False, device="cpu"):
+        self._base = base_embeddings
+        self._model_name = model_name
+        self._local_only = local_only
+        self._device = device
+
+    def _rebuild_cpu(self):
+        model_kwargs = {"device": "cpu"}
+        if self._local_only:
+            model_kwargs["local_files_only"] = True
+        self._base = HuggingFaceEmbeddings(model_name=self._model_name, model_kwargs=model_kwargs)
+        self._device = "cpu"
+
+    def embed_documents(self, texts):
+        try:
+            return self._base.embed_documents(texts)
+        except Exception as exc:
+            if self._device == "cuda" and _is_cuda_oom_error(exc):
+                print("⚠️ CUDA OOM during embeddings (documents). Falling back to CPU embeddings.")
+                self._rebuild_cpu()
+                return self._base.embed_documents(texts)
+            raise
+
+    def embed_query(self, text):
+        try:
+            return self._base.embed_query(text)
+        except Exception as exc:
+            if self._device == "cuda" and _is_cuda_oom_error(exc):
+                print("⚠️ CUDA OOM during embeddings (query). Falling back to CPU embeddings.")
+                self._rebuild_cpu()
+                return self._base.embed_query(text)
+            raise
+
 # --- 3. CHROMA VECTOR STORE SETUP ---
 # Uses SQLite-based ChromaDB for local vector storage
 CHROMA_PERSIST_DIR = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
@@ -84,14 +142,46 @@ _vectorstore_lock = threading.Lock()
 
 
 def _create_embeddings():
-    """Create HF embeddings, with offline/local-first + deterministic fallback."""
-    model_kwargs = {}
+    """Create HF embeddings with GPU-first strategy and CPU fallback on OOM/errors."""
+    device = "cpu"
+    if HF_EMBED_DEVICE in ("cuda", "cpu"):
+        device = HF_EMBED_DEVICE
+    elif HF_EMBED_DEVICE == "auto":
+        device = "cuda" if _torch_cuda_available() else "cpu"
+
+    base_model_kwargs = {"device": device}
     if HF_LOCAL_ONLY:
-        model_kwargs["local_files_only"] = True
+        base_model_kwargs["local_files_only"] = True
 
     try:
-        return HuggingFaceEmbeddings(model_name=HF_MODEL_NAME, model_kwargs=model_kwargs)
+        base = HuggingFaceEmbeddings(model_name=HF_MODEL_NAME, model_kwargs=base_model_kwargs)
+        print(f"✅ Embeddings initialized on {device.upper()} ({HF_MODEL_NAME})")
+        return SafeHuggingFaceEmbeddings(
+            base_embeddings=base,
+            model_name=HF_MODEL_NAME,
+            local_only=HF_LOCAL_ONLY,
+            device=device,
+        )
     except Exception as e:
+        # If CUDA failed at init time, retry on CPU before deterministic fallback.
+        if device == "cuda":
+            print(f"⚠️ Embedding init failed on CUDA ({e}). Retrying on CPU...")
+            try:
+                cpu_kwargs = {"device": "cpu"}
+                if HF_LOCAL_ONLY:
+                    cpu_kwargs["local_files_only"] = True
+                base = HuggingFaceEmbeddings(model_name=HF_MODEL_NAME, model_kwargs=cpu_kwargs)
+                print(f"✅ Embeddings initialized on CPU ({HF_MODEL_NAME})")
+                return SafeHuggingFaceEmbeddings(
+                    base_embeddings=base,
+                    model_name=HF_MODEL_NAME,
+                    local_only=HF_LOCAL_ONLY,
+                    device="cpu",
+                )
+            except Exception as cpu_e:
+                print(f"Embedding model load failed on CPU too ({cpu_e}). Using local deterministic fallback embeddings.")
+                return LocalFallbackEmbeddings(dim=FALLBACK_EMBED_DIM)
+
         print(f"Embedding model load failed ({e}). Using local deterministic fallback embeddings.")
         return LocalFallbackEmbeddings(dim=FALLBACK_EMBED_DIM)
 
@@ -596,6 +686,74 @@ def enhance_context_with_behavior(user_id, context_blocks):
     return context_blocks
 
 
+def _rerank_properties_with_behavior(properties, behavior):
+    """Re-rank property suggestions using learned UserInteraction preferences."""
+    if not properties or not behavior:
+        return properties
+
+    preferred_builders = {
+        str(b).strip().lower()
+        for b in behavior.get('preferred_builders', [])
+        if b
+    }
+    preferred_locations = {
+        str(l).strip().lower()
+        for l in behavior.get('preferred_locations', [])
+        if l
+    }
+
+    def score(prop):
+        s = 0
+        builder_name = str(getattr(prop, 'Builder_Name', '') or '').strip().lower()
+        location = str(getattr(prop, 'Location', '') or '').strip().lower()
+
+        if builder_name and builder_name in preferred_builders:
+            s += 2
+
+        if location and preferred_locations:
+            if any(loc in location or location in loc for loc in preferred_locations):
+                s += 2
+
+        return s
+
+    return sorted(properties, key=lambda p: (score(p), -SmartFilter.parse_price(getattr(p, 'Price_Starting_From', '0'))), reverse=True)
+
+
+def _rerank_builders_with_behavior(builders, behavior):
+    """Re-rank builder suggestions using learned UserInteraction preferences."""
+    if not builders or not behavior:
+        return builders
+
+    preferred_builders = {
+        str(b).strip().lower()
+        for b in behavior.get('preferred_builders', [])
+        if b
+    }
+    preferred_locations = {
+        str(l).strip().lower()
+        for l in behavior.get('preferred_locations', [])
+        if l
+    }
+
+    def score(builder):
+        s = 0
+        name = str(getattr(builder, 'company_name', '') or '').strip().lower()
+        city = str(getattr(builder, 'city', '') or '').strip().lower()
+        loc = str(getattr(builder, 'location', '') or '').strip().lower()
+
+        if name and name in preferred_builders:
+            s += 2
+
+        location_blob = f"{city} {loc}".strip()
+        if preferred_locations and location_blob:
+            if any(pl in location_blob or location_blob in pl for pl in preferred_locations):
+                s += 2
+
+        return s
+
+    return sorted(builders, key=lambda b: (score(b), getattr(b, 'completed_projects', 0) or 0), reverse=True)
+
+
 # ============================================
 # DOCUMENT FACTORY & SYNC (Keep existing)
 # ============================================
@@ -690,6 +848,84 @@ def clean_json_field(field_value):
         return str(data)
     except:
         return str(field_value)
+
+
+def _invoke_ollama(prompt, temperature=0.3, max_output_tokens=600):
+    """
+    Invoke Ollama with GPU-first behavior.
+    If GPU inference OOMs, retry forcing CPU (`num_gpu=0`).
+    """
+    def _invoke_once(force_cpu=False):
+        options = {
+            "temperature": temperature,
+            "num_predict": max_output_tokens,
+        }
+        if force_cpu:
+            options["num_gpu"] = 0
+
+        payload = {
+            "model": OLLAMA_MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": options,
+        }
+
+        response = requests.post(
+            f"{OLLAMA_HOST.rstrip('/')}/api/generate",
+            json=payload,
+            timeout=45,
+        )
+        response.raise_for_status()
+        data = response.json()
+        text = (data or {}).get("response", "")
+        if not text or not text.strip():
+            raise RuntimeError("Ollama returned empty response")
+        return text.strip()
+
+    try:
+        return _invoke_once(force_cpu=False)
+    except Exception as gpu_exc:
+        # Ollama error messages can vary; treat generic OOM as GPU pressure and retry on CPU.
+        if "out of memory" in str(gpu_exc).lower() or _is_cuda_oom_error(gpu_exc):
+            print(f"⚠️ Ollama GPU OOM detected ({gpu_exc}). Retrying on CPU...")
+            return _invoke_once(force_cpu=True)
+        raise
+
+
+def _invoke_gemini(prompt, temperature=0.3, max_output_tokens=600):
+    """Invoke Gemini via LangChain and return text response."""
+    if not LANGCHAIN_AVAILABLE or ChatGoogleGenerativeAI is None:
+        raise RuntimeError("Gemini client unavailable")
+
+    llm = ChatGoogleGenerativeAI(
+        model=GEMINI_MODEL,
+        temperature=temperature,
+        max_output_tokens=max_output_tokens,
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+    )
+    result = llm.invoke(prompt)
+    content = getattr(result, "content", "")
+    if not content or not str(content).strip():
+        raise RuntimeError("Gemini returned empty response")
+    return str(content).strip()
+
+
+def invoke_llm_with_fallback(prompt, temperature=0.3, max_output_tokens=600):
+    """
+    Ollama-first architecture:
+    1) Try local Ollama (qwen2.5)
+    2) If it fails, fallback to Gemini API
+    Returns: (response_text, provider)
+    """
+    try:
+        return _invoke_ollama(prompt, temperature=temperature, max_output_tokens=max_output_tokens), "ollama"
+    except Exception as ollama_error:
+        print(f"⚠️ Ollama failed, falling back to Gemini: {ollama_error}")
+
+    try:
+        return _invoke_gemini(prompt, temperature=temperature, max_output_tokens=max_output_tokens), "gemini"
+    except Exception as gemini_error:
+        raise RuntimeError(f"Both Ollama and Gemini failed. Gemini error: {gemini_error}")
 
 
 def sync_properties_to_vectordb():
@@ -1845,6 +2081,7 @@ def handle_simple_query(query, user_id=None, session_shown_ids=None):
     # Extract filters using existing logic
     params = sync_extract_params(query)
     query_lower = query.lower()
+    behavior = analyze_user_behavior(user_id) if user_id else None
 
     # Determine search type
     is_builder_search = any(word in query_lower for word in ['builder', 'builders', 'developer', 'construction'])
@@ -1865,10 +2102,14 @@ def handle_simple_query(query, user_id=None, session_shown_ids=None):
             builders = Builder.query.order_by(Builder.completed_projects.desc()).limit(10).all()
 
         if builders:
+            builders = _rerank_builders_with_behavior(builders, behavior)
+
             # Format response
             response = f"Found {len(builders)} builders"
             if location:
                 response += f" in {location.title()}"
+            if behavior:
+                response += " (ranked using your recent interaction preferences)"
 
             # Mark as shown
             for b in builders[:10]:
@@ -1876,7 +2117,7 @@ def handle_simple_query(query, user_id=None, session_shown_ids=None):
 
             return {
                 "query_type": "simple",
-                "data_sources_used": ["db"],
+                "data_sources_used": ["db", "user_interaction"] if behavior else ["db"],
                 "response": response,
                 "properties": [],
                 "builders": builders,
@@ -1932,6 +2173,8 @@ def handle_simple_query(query, user_id=None, session_shown_ids=None):
         # Limit results
         properties = filtered[:10]
 
+        properties = _rerank_properties_with_behavior(properties, behavior)
+
         if properties:
             # Format response
             response = f"Found {len(properties)} properties"
@@ -1941,6 +2184,8 @@ def handle_simple_query(query, user_id=None, session_shown_ids=None):
                 response += f" under {budget} Cr"
             if bhk:
                 response += f" with {bhk} BHK"
+            if behavior:
+                response += " (ranked using your recent interaction preferences)"
 
             # Mark as shown
             for p in properties:
@@ -1948,7 +2193,7 @@ def handle_simple_query(query, user_id=None, session_shown_ids=None):
 
             return {
                 "query_type": "simple",
-                "data_sources_used": ["db"],
+                "data_sources_used": ["db", "user_interaction"] if behavior else ["db"],
                 "response": response,
                 "properties": properties,
                 "builders": [],
@@ -1976,6 +2221,8 @@ def handle_rag_query(query, user_id=None, chat_history=[], session_shown_ids=Non
         session_shown_ids = set()
 
     try:
+        behavior = analyze_user_behavior(user_id) if user_id else None
+
         # Retrieve relevant documents
         retriever = vectorstore.as_retriever(
             search_type="mmr",
@@ -2000,15 +2247,9 @@ def handle_rag_query(query, user_id=None, chat_history=[], session_shown_ids=Non
             history_text = "\n".join([f"User: {h[0]}\nAI: {h[1]}" for h in chat_history[-3:]])
             context_blocks.append(f"RECENT CONVERSATION:\n{history_text}")
 
-        full_context = "\n\n".join(context_blocks)
+        context_blocks = enhance_context_with_behavior(user_id, context_blocks)
 
-        # Setup LLM
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0.3,
-            max_output_tokens=600,
-            google_api_key=os.getenv("GOOGLE_API_KEY")
-        )
+        full_context = "\n\n".join(context_blocks)
 
         prompt = f"""You are a helpful Real Estate Assistant.
 
@@ -2023,8 +2264,11 @@ Question: {query}
 
 Response:"""
 
-        response = llm.invoke(prompt)
-        ai_response = response.content.strip()
+        ai_response, provider_used = invoke_llm_with_fallback(
+            prompt,
+            temperature=0.3,
+            max_output_tokens=600,
+        )
 
         # Extract relevant properties/builders from docs
         properties = []
@@ -2045,6 +2289,9 @@ Response:"""
                     builders.append(builder)
 
         # Limit and mark as shown
+        properties = _rerank_properties_with_behavior(properties, behavior)
+        builders = _rerank_builders_with_behavior(builders, behavior)
+
         properties = properties[:8]
         builders = builders[:8]
 
@@ -2055,7 +2302,7 @@ Response:"""
 
         return {
             "query_type": "medium",
-            "data_sources_used": ["rag", "llm"],
+            "data_sources_used": ["rag", provider_used, "user_interaction"] if behavior else ["rag", provider_used],
             "response": ai_response,
             "properties": properties,
             "builders": builders,
@@ -2078,6 +2325,8 @@ def handle_agent_query(query, user_id=None, chat_history=[], session_shown_ids=N
         session_shown_ids = set()
 
     try:
+        behavior = analyze_user_behavior(user_id) if user_id else None
+
         # Extract query parameters
         params = sync_extract_params(query)
 
@@ -2102,14 +2351,10 @@ def handle_agent_query(query, user_id=None, chat_history=[], session_shown_ids=N
 
         # Combine agent outputs
         combined_context = build_combined_context(agents_results, query)
-
-        # Final LLM synthesis
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0.2,
-            max_output_tokens=800,
-            google_api_key=os.getenv("GOOGLE_API_KEY")
-        )
+        behavior_context = []
+        behavior_context = enhance_context_with_behavior(user_id, behavior_context)
+        if behavior_context:
+            combined_context = f"{combined_context}\n\n" + "\n".join(behavior_context)
 
         final_prompt = f"""You are an expert Real Estate Investment Advisor.
 
@@ -2123,8 +2368,11 @@ User Query: {query}
 
 Provide a detailed, balanced recommendation (6-8 sentences) that helps the user make an informed decision:"""
 
-        final_response = llm.invoke(final_prompt)
-        ai_response = final_response.content.strip()
+        ai_response, provider_used = invoke_llm_with_fallback(
+            final_prompt,
+            temperature=0.2,
+            max_output_tokens=800,
+        )
 
         # Collect all properties/builders from agents
         all_properties = []
@@ -2141,6 +2389,9 @@ Provide a detailed, balanced recommendation (6-8 sentences) that helps the user 
                         all_builders.append(b)
 
         # Limit results and mark as shown
+        all_properties = _rerank_properties_with_behavior(all_properties, behavior)
+        all_builders = _rerank_builders_with_behavior(all_builders, behavior)
+
         all_properties = all_properties[:10]
         all_builders = all_builders[:10]
 
@@ -2151,7 +2402,7 @@ Provide a detailed, balanced recommendation (6-8 sentences) that helps the user 
 
         return {
             "query_type": "complex",
-            "data_sources_used": ["db", "rag", "agents", "llm"],
+            "data_sources_used": ["db", "rag", "agents", provider_used, "user_interaction"] if behavior else ["db", "rag", "agents", provider_used],
             "response": ai_response,
             "properties": all_properties,
             "builders": all_builders,
