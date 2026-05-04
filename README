@@ -13,9 +13,9 @@ This project is designed as a **Major AI/ML + Full Stack System**, combining sca
 
 ---
 
-# 🚀 Core AI Functionalities
+## 🚀 Core AI Functionalities
 
-## 🧠 1. Recommendation System
+### 🧠 Recommendation System
 - Personalized property suggestions based on:
   - Budget
   - Location
@@ -26,9 +26,7 @@ This project is designed as a **Major AI/ML + Full Stack System**, combining sca
   - Search history
 - Continuously improves using **interaction-based feedback loop**
 
----
-
-## 🔗 2. Graph Neural Network (GNN)
+### 🔗 Graph Neural Network (GNN)
 - Models relationships between:
   - Users
   - Properties
@@ -42,9 +40,7 @@ This project is designed as a **Major AI/ML + Full Stack System**, combining sca
 
 ---
 
-## 🧾 3. User Memory & Behavior Tracking
-- Tracks:
-  - Viewed listings
+### 🧾ed listings
   - Favorite properties
   - Search queries
 - Builds **dynamic user profiles**
@@ -57,9 +53,7 @@ This project is designed as a **Major AI/ML + Full Stack System**, combining sca
 
 ## 🤖 4. RAG-Based AI Chat Assistant
 - Uses **Retrieval-Augmented Generation**
-- Integrated with:
-  - Vector Database (ChromaDB)
-- Capabilities:
+### 🤖lities:
   - Answer property-related queries
   - Provide locality insights
   - Assist decision-making
@@ -70,9 +64,7 @@ This project is designed as a **Major AI/ML + Full Stack System**, combining sca
 
 ## 🌐 5. Data Pipeline (Selenium Web Scraping)
 - Automated scraping of:
-  - Property listings
-  - Builder details
-  - Pricing data
+### 🌐ing data
 - Keeps system:
   - Updated
   - Scalable
@@ -85,9 +77,7 @@ This project is designed as a **Major AI/ML + Full Stack System**, combining sca
 - Property price trends
 - Location intelligence
 - User behavior analytics
-- Admin dashboards with graph-based metrics
-
----
+### 📊
 
 # 🏗️ System Architecture
 
@@ -97,173 +87,222 @@ Backend (Flask REST API)
 ↓
 AI Layer:
 
-Recommendation Engine
-GNN Models
-User Behavior Tracking
-RAG Chat System
-↓
-Data Layer:
-SQLite / PostgreSQL
-ChromaDB (Vector Store)
-↓
-Data Pipeline:
-Selenium Scraping
+R# 🏗️ System Architecture
 
+```
+Frontend (React + Vite + Clerk)
+         ↓
+Backend (Flask REST API)
+         ↓
+AI Layer:
+  - Recommendation Engine
+  - GNN Models
+  - User Behavior Tracking
+  - RAG Chat System
+         ↓
+Data Layer:
+  - SQLite / PostgreSQL
+  - ChromaDB (Vector Store)
+         ↓
+Data Pipeline:
+  - Selenium Scraping
+```
 
 ---
 
-# 🧩 Tech Stack
-
-## 💻 Frontend
+### 💻 Frontend
 - React (Vite)
 - Clerk Authentication
 - Responsive UI
 - Dashboard & Admin Panels
 
-## ⚙️ Backend
+### ⚙️ Backend
 - Flask (REST API)
 - SQLAlchemy ORM
 - Flask-Migrate
 - CORS-enabled APIs
 
-## 🤖 AI / ML
+### 🤖 AI / ML
 - Graph Neural Networks (GNN)
 - Recommendation Systems
 - User Behavior Modeling
 - RAG (Retrieval-Augmented Generation)
 - Vector Database (ChromaDB)
 
-## 📡 Data Engineering
+### 📡 Data Engineering
 - Selenium Web Scraping
 - CSV Data Pipelines
 - Data Processing Scripts
 
 ---
 
-# 📂 Project Structure
+## 📂 Project Structure
+
+```
 /frontend
 ├── src/
 ├── public/
 
 /backend
-├── app.py # Main API
-├── models.py # Database models
-├── auth.py # Auth & admin logic
+├── app.py                          # Main API
+├── models.py                       # Database models
+├── auth.py                         # Auth & admin logic
 ├── extensions.py
 ├── requirements.txt
-├── instance/ # SQLite DB
-├── uploads/ # File storage
-├── aiml_folder/ # ML models (GNN, recommender)
-├── chatbot/ # RAG system
-├── chroma_db/ # Vector DB
+├── instance/                       # SQLite DB
+├── uploads/                        # File storage
+├── aiml_folder/                    # ML models (GNN, recommender)
+├── chatbot/                        # RAG system
+├── chroma_db/                      # Vector DB
 
-/uploads # Shared uploads
-
+/uploads                            # Shared uploads
+```
 
 ---
 
-# ⚡ Key Features
+## ⚡ Key Features
 
-## 🏠 Property System
-- Property listing & search APIs
-- Advanced filtering & sorting
-- Property detail pages
+#- Nearest-node/location mapping
+- Smart locality recommendations
 
-## 📍 Location Intelligence
+### 📍 Location Intelligence
 - Nearest-node/location mapping
 - Smart locality recommendations
 
-## 🧑‍💼 Builder Module
+### 🧑‍💼 Builder Module
 - Builder profiles
 - Builder project listings
 
-## ❤️ Favorites System
+### ❤️ Favorites System
 - Guest + user session merging
 - Personalized favorite tracking
 
-## 📝 Blog System
+### 📝 Blog System
 - Blog creation & management
 - Slug-based routing
 - AI-generated summaries
 
-## 🔐 Authentication & Security
+### 🔐 Authentication & Security
 - Clerk Authentication
 - Admin authorization
 - Audit & security endpoints
 
-## 📊 Admin Dashboard
+### 📊 Admin Dashboard
 - System analytics
 - Graph data
 - User activity tracking
 
-## 📁 File Uploads
+### 📁 File Uploads
 - Image/document uploads
-- Stored in backend/uploads
+- Stored in `backend/uploads`
 
 ---
 
-# 🛠️ Setup Guide
+## 🛠️ Setup Guide
 
-## 1️⃣ Install Dependencies
+### Prerequisites
+- Node.js (recommended latest LTS)
+- npm
+- Python 3.11+
+- Git Bash / WSL / PowerShell (for Windows)
+
+### 1. Install Dependencies
 
 ```bash
 npm install
 npm install --prefix frontend
+```
 
-Backend Setup
+### 2. Backend Setup
+
+```bash
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1   # PowerShell
+# or .\.venv\Scripts\activate.bat  # CMD
 pip install -r requirements.txt
-3️⃣ Environment Variables
+```
 
-Create backend/.env:
+### 3. Environment Variables
 
+Create `backend/.env`:
+
+```env
 DATABASE_URL=sqlite:///instance/hns.db
 VECTOR_STORE_TYPE=chroma
 CLERK_SECRET_KEY=your_key
 GOOGLE_API_KEY=your_key
 ADMIN_SETUP_KEY=your_key
+```
 
+---
 
-▶️ Running the Project
-Run Full Project
+## ▶️ Running the Project
+
+### Full Project
+
+```bash
 npm run start
-Frontend Only
+```
+
+### Frontend Only
+
+```bash
 npm --prefix frontend run dev
-Backend Only
+```
+
+### Backend Only
+
+```bash
 cd backend
 .\.venv\Scripts\Activate.ps1
 python app.py
+```
 
+---
 
-🗄️ Database
-Default: SQLite (backend/instance/hns.db)
-Optional: PostgreSQL via DATABASE_URL
+## 🗄️ Database
 
+- **Default**: SQLite (`backend/instance/hns.db`)
+- **Optional**: PostgreSQL via `DATABASE_URL`
 
-🔐 Authentication
-Clerk-based authentication
-Default admin:
-Email: admin@gmail.com
-Password: admin
-📌 Unique Selling Points
-🔥 Combines AI + Full Stack + Data Engineering
-🧠 Implements real-world recommendation system
-🔗 Uses Graph Neural Networks for relationship modeling
-🤖 Integrates RAG-based AI assistant
-📊 Learns from user behavior dynamically
-🌐 Uses live scraped data for scalability
-🎯 Future Improvements
-Deep learning-based price prediction
-Real-time map integration
-Advanced GNN optimization
-Deployment on cloud (AWS/GCP)
-Mobile app version
+---
 
-📬 Contact
+## 🔐 Authentication
 
-Explore:
+- Clerk-based authentication
+- **Default admin credentials:**
+  - Email: `admin@gmail.com`
+  - Password: `admin`
 
-Backend → backend/app.py
-Frontend → frontend/src/
+---
+
+## 🔥 Unique Selling Points
+
+- ✅ Combines AI + Full Stack + Data Engineering
+- ✅ Implements real-world recommendation system
+- ✅ Uses Graph Neural Networks for relationship modeling
+- ✅ Integrates RAG-based AI assistant
+- ✅ Learns from user behavior dynamically
+- ✅ Uses live scraped data for scalability
+
+---
+
+## 🎯 Future Improvements
+
+- Deep learning-based price prediction
+- Real-time map integration
+- Advanced GNN optimization
+- Deployment on cloud (AWS/GCP)
+- Mobile app version
+
+---
+
+## 📬 Contact & Resources
+
+Explore the codebase:
+
+- **Backend**: `backend/app.py`
+- **Frontend**: `frontend/src/`
+- **Models**: `backend/models.py`
+- **AI Components**: `backend/aiml_folder/`, `backend/chatbot/`
